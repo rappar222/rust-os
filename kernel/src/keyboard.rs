@@ -8,6 +8,10 @@ pub const KEY_RIGHT: char = '\x14';
 pub const CTRL_C: char = '\x03';
 pub const CTRL_L: char = '\x0C';
 pub const CTRL_D: char = '\x04';
+pub const KEY_ALT_TAB: char = '\x01';
+pub const KEY_ALT_Q: char = '\x02';
+pub const KEY_ALT_N: char = '\x0E';
+pub const KEY_ESC: char = '\x1B';
 
 const QUEUE_SIZE: usize = 256;
 
@@ -147,6 +151,7 @@ pub fn init() {
 pub struct KeyboardState {
     shift_pressed: bool,
     ctrl_pressed: bool,
+    alt_pressed: bool,
     caps_lock: bool,
     extended: bool,
 }
@@ -156,6 +161,7 @@ impl KeyboardState {
         Self {
             shift_pressed: false,
             ctrl_pressed: false,
+            alt_pressed: false,
             caps_lock: false,
             extended: false,
         }
@@ -163,6 +169,14 @@ impl KeyboardState {
 }
 
 static KB_STATE: Mutex<KeyboardState> = Mutex::new(KeyboardState::new());
+
+pub fn is_alt_pressed() -> bool {
+    KB_STATE.lock().alt_pressed
+}
+
+pub fn is_ctrl_pressed() -> bool {
+    KB_STATE.lock().ctrl_pressed
+}
 
 // US QWERTY Scancode Set 1 (unmodified)
 static SCANCODE_TABLE: [char; 58] = [
@@ -223,6 +237,10 @@ pub fn handle_scancode(scancode: u8) {
             // Left or Right Control
             state.ctrl_pressed = !is_break;
         }
+        0x38 => {
+            // Left or Right Alt
+            state.alt_pressed = !is_break;
+        }
         0x2A | 0x36 => {
             // Left Shift or Right Shift
             state.shift_pressed = !is_break;
@@ -240,6 +258,24 @@ pub fn handle_scancode(scancode: u8) {
                 } else {
                     SCANCODE_TABLE[code as usize]
                 };
+
+                if state.alt_pressed {
+                    match ch.to_ascii_lowercase() {
+                        '\t' => {
+                            KEY_QUEUE.lock().push(KEY_ALT_TAB);
+                            return;
+                        }
+                        'q' => {
+                            KEY_QUEUE.lock().push(KEY_ALT_Q);
+                            return;
+                        }
+                        'n' => {
+                            KEY_QUEUE.lock().push(KEY_ALT_N);
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
 
                 if state.ctrl_pressed {
                     match ch.to_ascii_lowercase() {

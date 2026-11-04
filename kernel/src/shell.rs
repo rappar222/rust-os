@@ -16,7 +16,8 @@ pub const ALL_COMMANDS_LIST: &[&str] = &[
     "chmod", "chown", "chgrp", "stat", "file", "head", "tail", "wc", "nl", "grep", "egrep", "fgrep",
     "find", "tree", "diff", "cmp", "comm", "sort", "uniq", "tr", "cut", "paste", "sed", "awk",
     "nano", "vim", "vi", "edit", "less", "more",
-    "pacman", "yay", "paru", "makepkg", "pacstrap", "arch-chroot", "genfstab", "install", "rustos-install",
+    "pacman", "yay", "paru", "makepkg", "pacstrap", "arch-chroot", "genfstab", "install", "rustos-install", "archinstall",
+    "wm", "startx", "desktop", "compositor",
     "neofetch", "fastfetch", "hyfetch", "pfetch", "onefetch",
     "uname", "arch", "whoami", "id", "groups", "users", "who", "w", "hostname", "hostnamectl",
     "date", "timedatectl", "cal", "uptime", "lscpu", "lspci", "lsusb", "lsblk", "lsmod", "modprobe", "insmod", "rmmod",
@@ -703,12 +704,27 @@ fn execute_command(state: &mut ShellState, cmd_line: &str) {
                 crate::applets::cmd_nano(&state.cwd, &args);
             }
         }
-        "install" | "rustos-install" => {
+        "install" | "rustos-install" | "archinstall" | "archinsttall" => {
             let auto_yes = args.contains(&"-y") || args.contains(&"--yes");
             crate::installer::run_installer(auto_yes);
             println!();
             print_prompt(state);
             return;
+        }
+        "wm" | "startx" | "staartx" | "desktop" | "desktopp" | "compositor" => {
+            if !crate::compositor::is_installed() {
+                vga::set_colors(ColorCode::Yellow, ColorCode::Black);
+                println!(":: RustOS Floating Window Compositor is not installed.");
+                println!(":: The system is currently running in live environment mode.");
+                vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
+                println!(":: Please run 'rustos-install' or 'archinstall' to install RustOS to disk");
+                println!(":: and enable the graphical floating compositor desktop environment.");
+                vga::set_colors(ColorCode::White, ColorCode::Black);
+            } else {
+                crate::compositor::run();
+                print_prompt(state);
+                return;
+            }
         }
         "pacman" => crate::pkg::cmd_pacman(&args),
         "yay" => crate::pkg::cmd_yay_or_paru("yay", &args),

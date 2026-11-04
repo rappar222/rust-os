@@ -21,6 +21,7 @@ pub mod applets;
 pub mod power;
 pub mod shell;
 pub mod installer;
+pub mod compositor;
 pub mod arch_commands;
 
 use alloc::format;

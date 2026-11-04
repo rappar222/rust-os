@@ -320,6 +320,79 @@ pub fn put_char_at(col: usize, row: usize, c: char, fg: ColorCode, bg: ColorCode
     }
 }
 
+pub fn draw_pixel(x: usize, y: usize, color: RgbColor) {
+    if let Some(ref mut writer) = *WRITER.lock() {
+        writer.draw_pixel(x, y, color);
+    }
+}
+
+pub fn fill_rect(x: usize, y: usize, width: usize, height: usize, color: RgbColor) {
+    if let Some(ref mut writer) = *WRITER.lock() {
+        let max_x = core::cmp::min(x + width, writer.info.width);
+        let max_y = core::cmp::min(y + height, writer.info.height);
+        for cy in y..max_y {
+            for cx in x..max_x {
+                writer.draw_pixel(cx, cy, color);
+            }
+        }
+    }
+}
+
+pub fn draw_rect_outline(x: usize, y: usize, width: usize, height: usize, border: usize, color: RgbColor) {
+    if let Some(ref mut writer) = *WRITER.lock() {
+        let max_x = core::cmp::min(x + width, writer.info.width);
+        let max_y = core::cmp::min(y + height, writer.info.height);
+        if max_x <= x || max_y <= y {
+            return;
+        }
+        // Top border
+        let top_end = core::cmp::min(y + border, max_y);
+        for cy in y..top_end {
+            for cx in x..max_x {
+                writer.draw_pixel(cx, cy, color);
+            }
+        }
+        // Bottom border
+        let btm_start = max_y.saturating_sub(border).max(y);
+        for cy in btm_start..max_y {
+            for cx in x..max_x {
+                writer.draw_pixel(cx, cy, color);
+            }
+        }
+        // Left and right vertical borders
+        let left_end = core::cmp::min(x + border, max_x);
+        let right_start = max_x.saturating_sub(border).max(x);
+        for cy in y..max_y {
+            for cx in x..left_end {
+                writer.draw_pixel(cx, cy, color);
+            }
+            for cx in right_start..max_x {
+                writer.draw_pixel(cx, cy, color);
+            }
+        }
+    }
+}
+
+pub fn draw_string(px: usize, py: usize, text: &str, fg: RgbColor, bg: Option<RgbColor>) {
+    if let Some(ref mut writer) = *WRITER.lock() {
+        let mut curr_x = px;
+        for c in text.chars() {
+            let glyph = FONT_DATA[(c as usize) & 0xFF];
+            for (dy, &row_bits) in glyph.iter().enumerate() {
+                for dx in 0..FONT_WIDTH {
+                    let is_fg = (row_bits & (0x80 >> dx)) != 0;
+                    if is_fg {
+                        writer.draw_pixel(curr_x + dx, py + dy, fg);
+                    } else if let Some(bg_color) = bg {
+                        writer.draw_pixel(curr_x + dx, py + dy, bg_color);
+                    }
+                }
+            }
+            curr_x += FONT_WIDTH;
+        }
+    }
+}
+
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use x86_64::instructions::interrupts;

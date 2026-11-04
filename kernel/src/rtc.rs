@@ -47,6 +47,23 @@ impl DateTime {
             _ => "Sat",
         }
     }
+
+    pub fn format_time(&self) -> alloc::string::String {
+        alloc::format!("{:02}:{:02}:{:02}", self.hour, self.minute, self.second)
+    }
+
+    pub fn format(&self) -> alloc::string::String {
+        alloc::format!(
+            "{} {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
+            self.weekday_name(),
+            self.year,
+            self.month,
+            self.day,
+            self.hour,
+            self.minute,
+            self.second
+        )
+    }
 }
 
 fn read_cmos(reg: u8) -> u8 {

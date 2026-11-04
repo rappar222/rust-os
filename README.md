@@ -39,7 +39,35 @@
 - **Custom Package Compilation (`makepkg`)**:
   - Edit `/root/PKGBUILD` with `nano PKGBUILD` and run `makepkg -si` to build and install your own custom executable package directly inside RustOS.
 
-### 4. Linux Utility Suite
+### 4. Interactive Guided Installer (`archinstall` style)
+- **Guided Setup (`archinstall` / `rustos-install` / `install`)**:
+  - Interactive multi-step wizard modeled after the Arch Linux guided installer (`archinstall`).
+  - **Locale & Keymap**: Choose between English (US/UK), German, Romanian, French, Spanish, Italian.
+  - **Timezone**: Select between UTC, Europe/Bucharest, America/New_York, Europe/London, Europe/Berlin, Asia/Tokyo.
+  - **Package Mirror**: Select Tier-1 Arch & RustOS package mirrors (Worldwide geo, Kernel.org, Cloudflare CDN).
+  - **Disk Partitioning**: Wipe and auto-partition `/dev/sda` with SimpleFS v2 persistence, use existing partitions, or RAM disk.
+  - **System Hostname & Users**: Set hostname, root password, standard user account, and sudoers (`wheel` group) privileges.
+  - **Desktop Selection**: Choose to install the RustOS Floating Window Compositor or minimal CLI console.
+  - Automated non-interactive mode supported via `-y` / `--yes`.
+
+### 5. Custom Floating Window Compositor (`startx` / `wm` / `desktop`)
+- **Overlapping Floating Windows**:
+  - Available after installation (or enabled via `startx` / `wm` / `desktop`).
+  - **Interactive Floating Terminal**: Live `rsh` shell in a floating window supporting commands, scrolling, and history.
+  - **Live System Monitor**: Floating `btop` dashboard with live CPU stats, memory, disk I/O, and kernel tasks.
+  - **System Information Window**: Floating `neofetch` window with the official Rust gear ASCII logo and specifications.
+- **Window Chrome & Controls**:
+  - Rust Orange (`#DE551C`) title bars for focused windows with `[X]` `[-]` `[+]` control buttons and 1px border.
+  - Top taskbar panel showing RustOS badge, active window tabs, live RTC UTC clock, and memory stats.
+  - Bottom status bar with keybinding hints.
+- **Keyboard Shortcuts**:
+  - `Alt + Tab`: Cycle focus through windows and bring focused window to the top of the Z-stack.
+  - `Alt + Arrows`: Move focused window smoothly across the screen canvas.
+  - `Alt + N`: Spawn a new floating terminal window.
+  - `Alt + Q`: Close the active window.
+  - `Esc`: Exit GUI compositor and return cleanly to the console shell.
+
+### 6. Linux Utility Suite
 - **Filesystem & Text**: `ls` (`-l`, `-a`, `-la`), `cd`, `pwd`, `mkdir`, `rmdir`, `touch`, `cat` (`-n`), `write`, `append`, `cp`, `mv`, `rm` (`-r`, `-rf`), `chmod`, `stat`, `head`, `tail`, `wc`, `grep`, `find`, `tree`, `nano`
 - **System & Hardware**: `neofetch`, `fastfetch`, `hyfetch`, `pfetch`, `onefetch`, `uname` (`-a`, `-r`), `arch`, `whoami`, `id`, `hostname`, `hostnamectl`, `date`, `timedatectl`, `uptime`, `lscpu`, `lspci`, `lsblk`, `lsmod`, `free -h`, `df -h`, `du`, `mount`, `ps`, `top`, `htop`, `btop`, `systemctl`, `journalctl`, `dmesg`, `ip`, `ping`, `curl`
 - **Shell & Environment**: `echo`, `env`, `export`, `unset`, `alias`, `which`, `history`, `man`, `source`, `calc`, `mem`, `alloc`, `disk`, `format`, `colors`, `rice`, `reboot`, `shutdown`
@@ -48,13 +76,14 @@
 
 ## Building & Running
 
-### Build All Images (`rustos.vdi`, `rustos.iso`, BIOS & UEFI)
+### Build All Images (`rustos.vdi`, `rustos-uefi.vdi`, `rustos.iso`)
 ```bash
 cargo run --package runner -- --no-run
 ```
 This produces:
-- `rustos.vdi`: VirtualBox Hard Disk image (with persistent `SimpleFS v2` storage)
-- `rustos.iso`: Bootable hybrid BIOS/UEFI ISO image
+- `rustos.vdi`: VirtualBox Hard Disk image (BIOS MBR, fixed UUID `bf3f79da-beec-4105-abad-2a6221b124a4`)
+- `rustos-uefi.vdi`: VirtualBox Hard Disk image (UEFI GPT)
+- `rustos.iso`: Hybrid bootable ISO image (boots in both BIOS and UEFI mode)
 - `target/bin/rustos-bios.img`: Raw 32 MiB BIOS disk image
 - `target/bin/rustos-uefi.img`: Raw UEFI GPT disk image
 

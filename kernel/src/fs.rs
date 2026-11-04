@@ -8,9 +8,9 @@ use crate::ata;
 
 const FS_MAGIC: &[u8; 8] = b"RUSTFS02";
 const SUPERBLOCK_LBA: u32 = 12000;
-const METADATA_SECTORS: u32 = 8; // 8 sectors * 8 entries/sector = 64 entries
-const DATA_START_LBA: u32 = 12016;
-pub const MAX_FILES: usize = 64;
+const METADATA_SECTORS: u32 = 64; // 64 sectors * 8 entries/sector = 512 entries
+const DATA_START_LBA: u32 = 12100;
+pub const MAX_FILES: usize = 512;
 const MAX_SECTORS_PER_FILE: u32 = 16; // 8 KB per file
 
 #[derive(Clone, Copy)]

@@ -7,7 +7,7 @@ use std::process::{Command, ExitStatus};
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().skip(1).collect();
 
-    let is_release = args.iter().any(|arg| arg == "--release");
+    let is_release = !args.iter().any(|arg| arg == "--debug");
     let no_run = args.iter().any(|arg| arg == "--no-run" || arg == "--build-only");
     let headless = args.iter().any(|arg| arg == "--headless" || arg == "--nographic");
     let boot_iso = args.iter().any(|arg| arg == "--iso" || arg == "--cdrom");
@@ -130,9 +130,30 @@ fn main() -> Result<()> {
         }
     }
 
+    // 9. Generate VirtualBox UEFI VDI image
+    let uefi_vdi_image = out_dir.join("rustos-uefi.vdi");
+    let root_uefi_vdi = workspace_root.join("rustos-uefi.vdi");
+    let _ = Command::new("qemu-img")
+        .arg("convert")
+        .arg("-f")
+        .arg("raw")
+        .arg("-O")
+        .arg("vdi")
+        .arg(&uefi_image)
+        .arg(&uefi_vdi_image)
+        .status();
+    if uefi_vdi_image.exists() {
+        let _ = std::fs::copy(&uefi_vdi_image, &root_uefi_vdi);
+        println!(
+            "[+] VirtualBox UEFI VDI ready: {:?}",
+            root_uefi_vdi
+        );
+    }
+
     if no_run {
         println!("[+] Build complete. Available images:");
-        println!("    - VirtualBox Hard Disk : {:?}", root_vdi);
+        println!("    - VirtualBox BIOS VDI  : {:?}", root_vdi);
+        println!("    - VirtualBox UEFI VDI  : {:?}", root_uefi_vdi);
         println!("    - Bootable ISO Image   : {:?}", root_iso);
         println!("    - Raw BIOS Disk Image  : {:?}", bios_image);
         println!("    - Raw UEFI Disk Image  : {:?}", uefi_image);
@@ -215,6 +236,14 @@ fn create_iso(uefi_image: &Path, out_dir: &Path, iso_path: &Path) -> Result<()> 
         let mut dest = std::fs::File::create(&efi_fat_img)?;
         std::io::copy(&mut src.take(len_bytes), &mut dest)?;
     }
+
+    // Extract EFI system partition into ISO root so UEFI can boot directly via ISO filesystem
+    let _ = Command::new("7z")
+        .arg("x")
+        .arg(&efi_fat_img)
+        .arg(format!("-o{}", iso_root.display()))
+        .arg("-y")
+        .output();
 
     // 3. Package into bootable ISO using xorriso
     let xorriso_check = Command::new("which").arg("xorriso").output();

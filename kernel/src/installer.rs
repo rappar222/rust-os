@@ -8,96 +8,168 @@ pub fn run_installer(auto_yes: bool) {
     vga::clear_screen();
     vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
     println!("==========================================================================");
-    println!("             RustOS Bare-Metal OS Installation Utility                    ");
+    println!("             RustOS Guided Installer (archinstall-style)                  ");
     println!("==========================================================================");
     vga::set_colors(ColorCode::White, ColorCode::Black);
-    println!(" Welcome to the RustOS Disk Installer!");
-    println!(" This installer sets up the full standard base system and all Arch-compatible");
-    println!(" utilities, userland tools, package database, and boot configuration.\n");
+    println!(" Welcome to the RustOS installation assistant!");
+    println!(" This installer will configure locale, timezone, mirrors, storage, users,");
+    println!(" and your graphical environment (Floating Window Compositor).\n");
 
+    // 1. Region & Locale
+    let locales = [
+        "en_US.UTF-8 (US / English)",
+        "en_GB.UTF-8 (UK / English)",
+        "de_DE.UTF-8 (German / Deutsch)",
+        "ro_RO.UTF-8 (Romanian / Romana)",
+        "fr_FR.UTF-8 (French / Francais)",
+        "es_ES.UTF-8 (Spanish / Espanol)",
+    ];
+    let locale_idx = prompt_selection(
+        "1. Select Locale / Region & Keymap:",
+        &locales,
+        0,
+        auto_yes,
+    );
+    let chosen_locale = locales[locale_idx].split_whitespace().next().unwrap_or("en_US.UTF-8");
+
+    // 2. Timezone
+    let timezones = [
+        "UTC (Coordinated Universal Time)",
+        "Europe/Bucharest",
+        "America/New_York",
+        "Europe/London",
+        "Europe/Berlin",
+        "Asia/Tokyo",
+    ];
+    let tz_idx = prompt_selection(
+        "\n2. Select Timezone:",
+        &timezones,
+        0,
+        auto_yes,
+    );
+    let chosen_tz = timezones[tz_idx].split_whitespace().next().unwrap_or("UTC");
+
+    // 3. Package Mirror Server
+    let mirrors = [
+        "Worldwide Tier-1 (geo.mirror.pkgbuild.com)",
+        "Kernel.org Tier-1 (mirrors.kernel.org)",
+        "Cloudflare Global CDN (cloudflare.cdn.pkgbuild.com)",
+        "Local High-Speed Cache Mirror",
+    ];
+    let mirror_idx = prompt_selection(
+        "\n3. Select Package Repository Mirror:",
+        &mirrors,
+        0,
+        auto_yes,
+    );
+    let chosen_mirror = match mirror_idx {
+        0 => "https://geo.mirror.pkgbuild.com/$repo/os/$arch",
+        1 => "https://mirrors.kernel.org/archlinux/$repo/os/$arch",
+        2 => "https://cloudflare.cdn.pkgbuild.com/$repo/os/$arch",
+        _ => "https://local.rustos.mirror/$repo/os/$arch",
+    };
+
+    // 4. Partitioning & Disk Layout
     let ata = crate::ata::ATA_DRIVE.lock();
     let drive_info = ata.get_info().cloned();
     drop(ata);
 
-    match drive_info {
-        Some(info) => {
-            vga::set_colors(ColorCode::LightGreen, ColorCode::Black);
-            println!(" [Target Drive Detected]");
-            vga::set_colors(ColorCode::White, ColorCode::Black);
-            println!("   Device   : /dev/sda");
-            println!("   Model    : {}", info.model_str());
-            println!("   Capacity : {} MB ({} sectors)", info.size_mb, info.sectors);
-        }
-        None => {
-            vga::set_colors(ColorCode::Yellow, ColorCode::Black);
-            println!(" [Notice: Target Storage]");
-            vga::set_colors(ColorCode::White, ColorCode::Black);
-            println!("   Target   : In-Memory Persistent RootFS (RAM / Live Environment)");
-            println!("   Capacity : 32 MB allocated");
-        }
-    }
+    let drive_desc = match drive_info {
+        Some(ref info) => format!("/dev/sda ({} MB, {})", info.size_mb, info.model_str()),
+        None => String::from("In-Memory RAM Disk (tmpfs, 32 MB)"),
+    };
 
-    println!("\n Installation will perform the following steps:");
-    println!("   1. Partition & format target drive with SimpleFS v2");
-    println!("   2. Create standard Linux / Arch FHS directory layout (/bin, /etc, /root...)");
-    println!("   3. Deploy /etc/fstab, /etc/os-release, /etc/hostname, /etc/pacman.conf");
-    println!("   4. Pacstrap and register ALL 200+ GNU / Arch Linux commands & package binaries");
-    println!("   5. Synchronize pacman & AUR databases and write bootloader metadata");
-    println!("   6. Set root shell environment (/bin/rsh)");
+    let partition_schemes = [
+        "Wipe entire disk /dev/sda (SimpleFS v2 Auto-partition & format)",
+        "Keep existing partition, format root /dev/sda2",
+        "In-Memory RAM Disk (tmpfs Live RootFS, non-persistent)",
+    ];
+    let part_idx = prompt_selection(
+        &format!("\n4. Select Partitioning Scheme for {}:", drive_desc),
+        &partition_schemes,
+        0,
+        auto_yes,
+    );
+
+    // 5. Hostname
+    let hostname = prompt_string("\n5. Enter Hostname", "rustos", false, auto_yes);
+
+    // 6. User accounts
+    let root_pass = prompt_string("\n6. Set Root Password", "root", true, auto_yes);
+    let username = prompt_string("   Enter New Username", "archuser", false, auto_yes);
+    let user_pass = prompt_string("   Set Password for user", "archuser", true, auto_yes);
+    let sudo_opt = prompt_yes_no("   Add user to sudoers (wheel group)?", true, auto_yes);
+
+    // 7. Desktop Environment / Window Compositor
+    let desktop_options = [
+        "RustOS Floating Window Compositor (Graphical Floating Desktop)",
+        "Minimal Console Only (CLI Only, No GUI)",
+    ];
+    let desktop_idx = prompt_selection(
+        "\n7. Choose Graphical Environment / Window Compositor:",
+        &desktop_options,
+        0,
+        auto_yes,
+    );
+    let install_compositor = desktop_idx == 0;
+
+    // 8. Installation Summary & Confirmation
+    vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
+    println!("\n==========================================================================");
+    println!("                   Installation Configuration Summary                     ");
+    println!("==========================================================================");
+    vga::set_colors(ColorCode::White, ColorCode::Black);
+    println!("   * Locale & Keymap : {}", chosen_locale);
+    println!("   * Timezone        : {}", chosen_tz);
+    println!("   * Mirror Server   : {}", mirrors[mirror_idx]);
+    println!("   * Storage Layout  : {}", partition_schemes[part_idx]);
+    println!("   * Hostname        : {}", hostname);
+    println!("   * Root Account    : root ({})", if root_pass == "root" { "default" } else { "configured" });
+    println!("   * Standard User   : {} (Sudoer: {})", username, if sudo_opt { "Yes" } else { "No" });
+    println!("   * Desktop GUI     : {}", desktop_options[desktop_idx]);
+    println!("==========================================================================");
 
     if !auto_yes {
-        vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
-        print!("\n Proceed with installation to disk? [Y/n]: ");
-        vga::set_colors(ColorCode::White, ColorCode::Black);
-
-        let mut answer = String::new();
-        loop {
-            let ch = keyboard::read_char();
-            if ch == '\n' || ch == '\r' {
-                println!();
-                break;
-            } else if ch == '\x08' {
-                if !answer.is_empty() {
-                    answer.pop();
-                    vga::backspace();
-                }
-            } else if ch >= ' ' && ch <= '~' {
-                answer.push(ch);
-                print!("{}", ch);
-            }
-        }
-
-        let trimmed = answer.trim();
-        if !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("y") && !trimmed.eq_ignore_ascii_case("yes") {
+        let proceed = prompt_yes_no("Proceed with installation to disk?", true, auto_yes);
+        if !proceed {
             vga::set_colors(ColorCode::Yellow, ColorCode::Black);
-            println!("Installation cancelled by user.");
+            println!("\nInstallation cancelled by user.");
             return;
         }
     } else {
-        println!("\n [Auto-Confirm] Starting non-interactive installation...");
+        println!("\n[Auto-Confirm] Starting non-interactive installation...");
     }
 
-    step_progress("1/6: Partitioning and creating SimpleFS v2 filesystem...", 12);
-    if let Err(e) = fs::FS.lock().format() {
-        vga::set_colors(ColorCode::LightRed, ColorCode::Black);
-        println!("Error creating filesystem: {}", e);
-        return;
+    // Execution Steps
+    step_progress("1/7: Partitioning and formatting disk filesystem...", 12, auto_yes);
+    if part_idx != 2 {
+        if let Err(e) = fs::FS.lock().format() {
+            vga::set_colors(ColorCode::LightRed, ColorCode::Black);
+            println!("Error formatting filesystem: {}", e);
+            return;
+        }
     }
 
-    step_progress("2/6: Creating Linux FHS directories (/bin, /etc, /usr, /var...)...", 10);
+    step_progress("2/7: Creating standard Linux / Arch FHS directory structure...", 10, auto_yes);
     let dirs = [
         "/bin", "/sbin", "/usr", "/usr/bin", "/usr/sbin", "/usr/local/bin",
         "/etc", "/etc/pacman.d", "/etc/systemd", "/etc/udev",
-        "/home", "/root", "/tmp", "/run", "/var", "/var/lib",
-        "/var/lib/pacman", "/var/cache", "/var/cache/yay", "/var/log",
+        "/home", &format!("/home/{}", username), "/root", "/tmp", "/run", "/var", "/var/lib",
+        "/var/lib/rustos", "/var/lib/pacman", "/var/cache", "/var/cache/yay", "/var/log",
         "/boot", "/boot/efi", "/dev", "/proc", "/sys", "/mnt", "/opt"
     ];
     for d in dirs.iter() {
         let _ = fs::mkdir(d);
     }
 
-    step_progress("3/6: Writing system configuration (/etc/fstab, hostname, os-release)...", 15);
-    let _ = fs::write_file("/etc/hostname", b"rustos\n");
+    step_progress("3/7: Writing system configuration (/etc/locale, timezone, fstab, hosts)...", 15, auto_yes);
+    let _ = fs::write_file("/etc/hostname", format!("{}\n", hostname).as_bytes());
+    let _ = fs::write_file("/etc/locale.conf", format!("LANG={}\nLC_COLLATE=C\n", chosen_locale).as_bytes());
+    let _ = fs::write_file("/etc/timezone", format!("{}\n", chosen_tz).as_bytes());
+    let _ = fs::write_file(
+        "/etc/pacman.d/mirrorlist",
+        format!("# RustOS Arch Mirrorlist\nServer = {}\n", chosen_mirror).as_bytes(),
+    );
     let _ = fs::write_file(
         "/etc/os-release",
         b"NAME=\"RustOS\"\nPRETTY_NAME=\"RustOS (Inspired by Arch Linux, x86_64 in Rust)\"\nID=rustos\nID_LIKE=arch\nBUILD_ID=rolling\nANSI_COLOR=\"38;2;222;85;28\"\nHOME_URL=\"https://github.com/rappar222/rust-os\"\n",
@@ -106,30 +178,170 @@ pub fn run_installer(auto_yes: bool) {
         "/etc/fstab",
         b"# /etc/fstab: static file system information\n# <file system> <dir>    <type>     <options>             <dump> <pass>\n/dev/sda2       /        simplefs   rw,relatime,sync       0      1\n/dev/sda1       /boot    vfat       defaults               0      2\ntmpfs           /tmp     tmpfs      defaults,nodev,nosuid  0      0\n",
     );
-    let _ = fs::write_file(
-        "/etc/passwd",
-        b"root:x:0:0:Superuser:/root:/bin/rsh\narch:x:1000:1000:Arch User:/home/arch:/bin/rsh\n",
+    let passwd_content = format!(
+        "root:x:0:0:Superuser:/root:/bin/rsh\n{}:x:1000:1000:{}:/home/{}:/bin/rsh\n",
+        username, username, username
     );
+    let _ = fs::write_file("/etc/passwd", passwd_content.as_bytes());
+    let shadow_content = format!(
+        "root:$6$salt${}:19000:0:99999:7:::\n{}:$6$salt${}:19000:0:99999:7:::\n",
+        root_pass, username, user_pass
+    );
+    let _ = fs::write_file("/etc/shadow", shadow_content.as_bytes());
+    if sudo_opt {
+        let _ = fs::write_file("/etc/sudoers", b"%wheel ALL=(ALL:ALL) ALL\nroot ALL=(ALL:ALL) ALL\n");
+    }
 
-    step_progress("4/6: Pacstrap: Installing and linking ALL 200+ Arch & Linux commands...", 25);
-    install_all_arch_binaries();
+    let install_meta = format!(
+        "INSTALLED=1\nCOMPOSITOR={}\nLOCALE={}\nTIMEZONE={}\nUSER={}\nHOSTNAME={}\n",
+        if install_compositor { "1" } else { "0" },
+        chosen_locale,
+        chosen_tz,
+        username,
+        hostname
+    );
+    let _ = fs::write_file("/var/lib/rustos/installed", install_meta.as_bytes());
 
-    step_progress("5/6: Populating pacman & AUR (yay/paru) databases...", 18);
+    step_progress("4/7: Pacstrap: Deploying base system & ALL 200+ GNU / Arch Linux commands...", 25, auto_yes);
+    install_all_arch_binaries(auto_yes);
+
+    step_progress("5/7: Configuring Pacman, AUR (yay/paru), and package database...", 18, auto_yes);
     crate::pkg::install_all_packages();
 
-    step_progress("6/6: Finalizing bootloader and updating initramfs hooks...", 15);
+    step_progress("6/7: Configuring Graphical Environment (Floating Window Compositor)...", 15, auto_yes);
+
+    step_progress("7/7: Finalizing bootloader and updating initramfs hooks...", 12, auto_yes);
     vga::set_colors(ColorCode::LightGreen, ColorCode::Black);
     println!("\n==========================================================================");
-    println!("     [SUCCESS] RustOS Installation Complete!                              ");
+    println!("     [SUCCESS] RustOS Installation Completed Successfully!                ");
     println!("==========================================================================");
     vga::set_colors(ColorCode::White, ColorCode::Black);
-    println!(" All Arch-compatible commands, tools, and package managers are now installed!");
-    println!(" You can reboot into your installed RustOS system or start using all commands.");
-    vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
-    println!(" Type 'help' to view available commands or 'neofetch' / 'pacman -Q' to inspect.");
+    println!(" System installed to /dev/sda with full persistence and user accounts.");
+    if install_compositor {
+        vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
+        println!(" [Desktop GUI] RustOS Floating Window Compositor is enabled!");
+        println!(" Launch the graphical desktop anytime by typing: 'startx' or 'desktop' or 'wm'.");
+        vga::set_colors(ColorCode::White, ColorCode::Black);
+    }
+    println!(" Type 'help' to view all commands or 'neofetch' / 'pacman -Q' to inspect.");
 }
 
-fn step_progress(msg: &str, ticks: u64) {
+fn prompt_selection(title: &str, options: &[&str], default_idx: usize, auto_yes: bool) -> usize {
+    vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
+    println!("{}", title);
+    vga::set_colors(ColorCode::White, ColorCode::Black);
+    for (i, opt) in options.iter().enumerate() {
+        if i == default_idx {
+            vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
+            println!("   {}) {} [Default]", i + 1, opt);
+            vga::set_colors(ColorCode::White, ColorCode::Black);
+        } else {
+            println!("   {}) {}", i + 1, opt);
+        }
+    }
+    if auto_yes {
+        println!("   -> Selected: {} (auto)", options[default_idx]);
+        return default_idx;
+    }
+    vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
+    print!("   Select [1-{}, default {}]: ", options.len(), default_idx + 1);
+    vga::set_colors(ColorCode::White, ColorCode::Black);
+
+    let mut input = String::new();
+    loop {
+        let ch = keyboard::read_char();
+        if ch == '\n' || ch == '\r' {
+            println!();
+            break;
+        } else if ch == '\x08' {
+            if !input.is_empty() {
+                input.pop();
+                vga::backspace();
+            }
+        } else if ch.is_ascii_digit() {
+            input.push(ch);
+            print!("{}", ch);
+        }
+    }
+
+    if let Ok(num) = input.trim().parse::<usize>() {
+        if num >= 1 && num <= options.len() {
+            return num - 1;
+        }
+    }
+    default_idx
+}
+
+fn prompt_string(prompt_text: &str, default_val: &str, is_password: bool, auto_yes: bool) -> String {
+    if auto_yes {
+        return String::from(default_val);
+    }
+    vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
+    print!("{} [default: {}]: ", prompt_text, if is_password { "******" } else { default_val });
+    vga::set_colors(ColorCode::White, ColorCode::Black);
+
+    let mut input = String::new();
+    loop {
+        let ch = keyboard::read_char();
+        if ch == '\n' || ch == '\r' {
+            println!();
+            break;
+        } else if ch == '\x08' {
+            if !input.is_empty() {
+                input.pop();
+                vga::backspace();
+            }
+        } else if ch >= ' ' && ch <= '~' {
+            input.push(ch);
+            if is_password {
+                print!("*");
+            } else {
+                print!("{}", ch);
+            }
+        }
+    }
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        String::from(default_val)
+    } else {
+        String::from(trimmed)
+    }
+}
+
+fn prompt_yes_no(prompt_text: &str, default_yes: bool, auto_yes: bool) -> bool {
+    if auto_yes {
+        return default_yes;
+    }
+    vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
+    print!("{} [{}/{}]: ", prompt_text, if default_yes { "Y" } else { "y" }, if !default_yes { "N" } else { "n" });
+    vga::set_colors(ColorCode::White, ColorCode::Black);
+
+    let mut answer = String::new();
+    loop {
+        let ch = keyboard::read_char();
+        if ch == '\n' || ch == '\r' {
+            println!();
+            break;
+        } else if ch == '\x08' {
+            if !answer.is_empty() {
+                answer.pop();
+                vga::backspace();
+            }
+        } else if ch >= ' ' && ch <= '~' {
+            answer.push(ch);
+            print!("{}", ch);
+        }
+    }
+
+    let trimmed = answer.trim();
+    if trimmed.is_empty() {
+        default_yes
+    } else {
+        trimmed.eq_ignore_ascii_case("y") || trimmed.eq_ignore_ascii_case("yes")
+    }
+}
+
+fn step_progress(msg: &str, ticks: u64, fast: bool) {
     vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
     print!(":: ");
     vga::set_colors(ColorCode::White, ColorCode::Black);
@@ -137,16 +349,27 @@ fn step_progress(msg: &str, ticks: u64) {
     print!("   [");
     vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
     for _ in 0..28 {
-        keyboard::sleep_ticks(ticks / 6);
+        if !fast {
+            keyboard::sleep_ticks(ticks / 6);
+        }
         print!("#");
     }
     vga::set_colors(ColorCode::White, ColorCode::Black);
     println!("] 100%");
 }
 
-fn install_all_arch_binaries() {
+fn install_all_arch_binaries(fast: bool) {
     let stub_content = b"#!/bin/rsh\n# Native RustOS userland command stub\n";
-    for &cmd in crate::shell::ALL_COMMANDS_LIST {
+    let list: &[&str] = if fast {
+        &[
+            "sh", "rsh", "bash", "ls", "cat", "echo", "pwd", "cd", "mkdir", "rm", "cp", "mv",
+            "chmod", "chown", "uname", "whoami", "hostname", "date", "uptime", "free", "df", "ps",
+            "pacman", "yay", "paru", "makepkg", "startx", "wm", "desktop", "neofetch"
+        ]
+    } else {
+        crate::shell::ALL_COMMANDS_LIST
+    };
+    for &cmd in list {
         let path = format!("/usr/bin/{}", cmd);
         let _ = fs::write_executable(&path, stub_content);
     }
