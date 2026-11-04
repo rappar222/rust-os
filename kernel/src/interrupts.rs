@@ -51,6 +51,11 @@ static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
     idt.page_fault.set_handler_fn(page_fault_handler);
     idt.general_protection_fault.set_handler_fn(general_protection_fault_handler);
 
+    // Fallback default handler for all hardware PIC interrupts (32..48)
+    for i in PIC_1_OFFSET..PIC_2_OFFSET + 8 {
+        idt[i].set_handler_fn(default_irq_handler);
+    }
+
     // Hardware PIC interrupts
     idt[InterruptIndex::Timer.as_u8()].set_handler_fn(timer_interrupt_handler);
     idt[InterruptIndex::Keyboard.as_u8()].set_handler_fn(keyboard_interrupt_handler);
@@ -115,6 +120,16 @@ extern "x86-interrupt" fn page_fault_handler(
     println!("Error Code: {:?}", error_code);
     println!("{:#?}", stack_frame);
     panic!("Execution halted due to unhandled page fault.");
+}
+
+extern "x86-interrupt" fn default_irq_handler(_stack_frame: InterruptStackFrame) {
+    unsafe {
+        // Send EOI to both PICs safely
+        let mut port_pic1: Port<u8> = Port::new(0x20);
+        let mut port_pic2: Port<u8> = Port::new(0xA0);
+        port_pic2.write(0x20);
+        port_pic1.write(0x20);
+    }
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {

@@ -12,6 +12,8 @@ pub mod interrupts;
 pub mod keyboard;
 pub mod memory;
 pub mod allocator;
+pub mod ata;
+pub mod fs;
 pub mod power;
 pub mod shell;
 
@@ -71,6 +73,24 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         }
         Err(e) => {
             println!("[WARN] Failed to initialize heap: {}", e);
+        }
+    }
+
+    // 6. Initialize ATA Hard Drive & Persistent Storage
+    match ata::init() {
+        Ok(drive_info) => {
+            println!(
+                "[OK] Hard Drive detected: {} ({} MB)",
+                drive_info.model_str(),
+                drive_info.size_mb
+            );
+            match fs::init() {
+                Ok(()) => println!("[OK] Persistent storage (SimpleFS) mounted"),
+                Err(e) => println!("[WARN] Filesystem error: {}", e),
+            }
+        }
+        Err(e) => {
+            println!("[INFO] Storage: {}", e);
         }
     }
 

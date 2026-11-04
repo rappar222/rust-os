@@ -63,6 +63,10 @@ An interactive, terminal-based 64-bit operating system written in **Rust** from 
   - Integrates Rust's official `alloc` crate on bare metal.
   - Linked-list heap allocator initialized from bootloader-detected usable RAM regions.
   - Full support for `Box`, `Vec`, `String`, `format!`, and closures.
+- **ATA Hard Drive & Persistent Storage**:
+  - **ATA PIO Hard Drive Driver** on primary IDE/SATA bus.
+  - **SimpleFS Filesystem**: Real persistent file storage saved directly to hard disk sectors across reboots.
+  - Shell commands for disk inspection and file management (`disk`, `ls`, `cat`, `write`, `rm`, `format`).
 - **Interactive Shell**:
   - Command parsing and line editing in real time.
   - Built-in utilities for inspecting hardware, memory, uptime, math evaluation, and power control.
@@ -81,6 +85,12 @@ An interactive, terminal-based 64-bit operating system written in **Rust** from 
 | `colors` | Renders color swatch blocks for all 16 VGA colors |
 | `mem` | Displays heap base address, allocated size, and RAM status |
 | `alloc` | Runs dynamic memory tests allocating `Vec`, `Box`, and `String` |
+| `disk` | Displays ATA hard drive hardware specifications & capacity |
+| `ls` / `dir` | Lists files saved on persistent disk storage |
+| `cat <file>` | Reads and displays file content from the hard drive |
+| `write <file> <text>` | Saves text into a file on the persistent hard drive |
+| `rm <file>` | Deletes a file from the hard drive |
+| `format` | Reformats the persistent SimpleFS filesystem |
 | `calc <expr>` | Mathematical expression evaluator (e.g. `calc 42 * 10 + 5`) |
 | `panic` | Triggers an intentional kernel panic to demonstrate crash dumps |
 | `reboot` | Reboots the computer via the 8042 PS/2 controller |
@@ -136,10 +146,20 @@ make build
 make iso
 ```
 
-This compiles the kernel for `x86_64-unknown-none` and packages three bootable formats in `target/bin/`:
-- **`target/bin/rustos.iso`**: Bootable El Torito CD-ROM ISO (UEFI / VirtualBox / VMware / Proxmox compatible)
+This compiles the kernel for `x86_64-unknown-none` and packages ready-to-use formats:
+- **`rustos.vdi`**: Native VirtualBox Hard Disk (attach as primary SATA/IDE hard drive)
+- **`rustos.iso`**: Bootable El Torito CD-ROM ISO
 - **`target/bin/rustos-bios.img`**: Raw MBR disk image (BIOS systems & raw USB flash drive)
 - **`target/bin/rustos-uefi.img`**: GPT disk image (UEFI hardware systems)
+
+### Running in VirtualBox
+
+1. In VirtualBox, create a new VM:
+   - **Type**: `Linux` or `Other`
+   - **Version**: **`Other/Unknown (64-bit)`** or **`Linux (64-bit)`** *(must be 64-bit!)*
+2. Under **Storage**:
+   - Add a Hard Disk: choose **`rustos.vdi`** from the project root.
+3. Start the VM! RustOS will boot directly from the virtual hard drive with persistent storage enabled.
 
 ### Run in QEMU Emulator
 

@@ -68,6 +68,13 @@ fn main() -> Result<()> {
     bios_boot
         .create_disk_image(&bios_image)
         .context("Failed to create BIOS disk image")?;
+
+    // Extend disk image to 32 MB to provide hard drive storage for SimpleFS
+    let disk_file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&bios_image)?;
+    disk_file.set_len(32 * 1024 * 1024)?; // 32 MiB virtual disk
+
     println!(
         "[+] BIOS disk image ready ({} bytes)",
         std::fs::metadata(&bios_image)?.len()
@@ -88,12 +95,40 @@ fn main() -> Result<()> {
     // 7. Generate bootable .ISO using xorriso and UEFI image
     let iso_path = out_dir.join("rustos.iso");
     create_iso(&uefi_image, &out_dir, &iso_path)?;
+    let root_iso = workspace_root.join("rustos.iso");
+    let _ = std::fs::copy(&iso_path, &root_iso);
+
+    // 8. Generate VirtualBox VDI hard disk image
+    let vdi_image = out_dir.join("rustos.vdi");
+    let root_vdi = workspace_root.join("rustos.vdi");
+    println!("[*] Creating VirtualBox VDI image: {:?}", root_vdi);
+    let qemu_img_status = Command::new("qemu-img")
+        .arg("convert")
+        .arg("-f")
+        .arg("raw")
+        .arg("-O")
+        .arg("vdi")
+        .arg(&bios_image)
+        .arg(&vdi_image)
+        .status();
+
+    if let Ok(s) = qemu_img_status {
+        if s.success() {
+            let _ = std::fs::copy(&vdi_image, &root_vdi);
+            println!(
+                "[+] VirtualBox VDI ready: {:?} ({} bytes)",
+                root_vdi,
+                std::fs::metadata(&root_vdi)?.len()
+            );
+        }
+    }
 
     if no_run {
-        println!("[+] Build complete. Available images in target/bin/:");
-        println!("    - BIOS Disk Image : {:?}", bios_image);
-        println!("    - UEFI Disk Image : {:?}", uefi_image);
-        println!("    - Bootable ISO    : {:?}", iso_path);
+        println!("[+] Build complete. Available images:");
+        println!("    - VirtualBox Hard Disk : {:?}", root_vdi);
+        println!("    - Bootable ISO Image   : {:?}", root_iso);
+        println!("    - Raw BIOS Disk Image  : {:?}", bios_image);
+        println!("    - Raw UEFI Disk Image  : {:?}", uefi_image);
         return Ok(());
     }
 

@@ -85,6 +85,12 @@ fn execute_command(cmd_line: &str) {
         "mem" => cmd_mem(),
         "alloc" => cmd_alloc(),
         "calc" => cmd_calc(&args),
+        "disk" => cmd_disk(),
+        "ls" | "dir" => cmd_ls(),
+        "cat" => cmd_cat(&args),
+        "write" => cmd_write(&args),
+        "rm" => cmd_rm(&args),
+        "format" => cmd_format(),
         "panic" => {
             vga::set_colors(ColorCode::LightRed, ColorCode::Black);
             panic!("Intentional panic requested via shell command.");
@@ -117,6 +123,12 @@ fn cmd_help() {
         ("colors", "Display 16-color VGA terminal palette"),
         ("mem", "Display kernel heap and memory status"),
         ("alloc", "Test dynamic heap memory allocation (Vec, Box, String)"),
+        ("disk", "Display ATA hard drive hardware info & capacity"),
+        ("ls", "List files stored in persistent disk storage"),
+        ("cat <file>", "Read and display file contents from disk"),
+        ("write <file> <text>", "Write text into a file on disk"),
+        ("rm <file>", "Delete a file from disk"),
+        ("format", "Reformat the disk filesystem"),
         ("calc <expr>", "Evaluate basic arithmetic expressions (e.g. calc 15 * 4 + 2)"),
         ("panic", "Trigger a kernel panic to test crash handling"),
         ("reboot", "Reboot the machine"),
@@ -296,4 +308,127 @@ fn simple_eval(expr: &str) -> Result<i64, &'static str> {
     }
 
     Ok(current_val)
+}
+
+fn cmd_disk() {
+    vga::set_colors(ColorCode::White, ColorCode::Black);
+    let ata = crate::ata::ATA_DRIVE.lock();
+    if let Some(info) = ata.get_info() {
+        println!("ATA Hard Drive Information:");
+        println!("  Model    : {}", info.model_str());
+        println!("  Capacity : {} MB ({} GB)", info.size_mb, info.size_mb / 1024);
+        println!("  Sectors  : {} (512 bytes/sector)", info.sectors);
+    } else {
+        vga::set_colors(ColorCode::LightRed, ColorCode::Black);
+        println!("No ATA hard drive detected or initialized.");
+    }
+    vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
+}
+
+fn cmd_ls() {
+    vga::set_colors(ColorCode::Yellow, ColorCode::Black);
+    println!("Files on Persistent Storage (SimpleFS):");
+    let files = crate::fs::list_files();
+    if files.is_empty() {
+        vga::set_colors(ColorCode::LightGray, ColorCode::Black);
+        println!("  (No files found. Use 'write <filename> <text>' to create one)");
+    } else {
+        for (name, size) in files {
+            vga::set_colors(ColorCode::LightGreen, ColorCode::Black);
+            print!("  {:20}", name);
+            vga::set_colors(ColorCode::LightGray, ColorCode::Black);
+            println!("{} bytes", size);
+        }
+    }
+    vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
+}
+
+fn cmd_cat(args: &[&str]) {
+    if args.is_empty() {
+        vga::set_colors(ColorCode::LightRed, ColorCode::Black);
+        println!("Usage: cat <filename>");
+        vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
+        return;
+    }
+
+    let filename = args[0];
+    match crate::fs::read_file(filename) {
+        Ok(data) => {
+            vga::set_colors(ColorCode::White, ColorCode::Black);
+            if let Ok(text) = core::str::from_utf8(&data) {
+                print!("{}", text);
+                if !text.ends_with('\n') {
+                    println!();
+                }
+            } else {
+                println!("[Binary data: {} bytes]", data.len());
+            }
+        }
+        Err(err) => {
+            vga::set_colors(ColorCode::LightRed, ColorCode::Black);
+            println!("Error: {}", err);
+        }
+    }
+    vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
+}
+
+fn cmd_write(args: &[&str]) {
+    if args.len() < 2 {
+        vga::set_colors(ColorCode::LightRed, ColorCode::Black);
+        println!("Usage: write <filename> <text content>");
+        vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
+        return;
+    }
+
+    let filename = args[0];
+    let content = args[1..].join(" ");
+    match crate::fs::write_file(filename, content.as_bytes()) {
+        Ok(()) => {
+            vga::set_colors(ColorCode::LightGreen, ColorCode::Black);
+            println!("File '{}' saved to disk ({} bytes).", filename, content.len());
+        }
+        Err(err) => {
+            vga::set_colors(ColorCode::LightRed, ColorCode::Black);
+            println!("Error writing file: {}", err);
+        }
+    }
+    vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
+}
+
+fn cmd_rm(args: &[&str]) {
+    if args.is_empty() {
+        vga::set_colors(ColorCode::LightRed, ColorCode::Black);
+        println!("Usage: rm <filename>");
+        vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
+        return;
+    }
+
+    let filename = args[0];
+    match crate::fs::delete_file(filename) {
+        Ok(()) => {
+            vga::set_colors(ColorCode::LightGreen, ColorCode::Black);
+            println!("File '{}' deleted from disk.", filename);
+        }
+        Err(err) => {
+            vga::set_colors(ColorCode::LightRed, ColorCode::Black);
+            println!("Error: {}", err);
+        }
+    }
+    vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
+}
+
+fn cmd_format() {
+    vga::set_colors(ColorCode::Yellow, ColorCode::Black);
+    println!("Formatting SimpleFS on disk...");
+    match crate::fs::FS.lock().format() {
+        Ok(()) => {
+            vga::set_colors(ColorCode::LightGreen, ColorCode::Black);
+            println!("Filesystem formatted successfully.");
+        }
+        Err(err) => {
+            vga::set_colors(ColorCode::LightRed, ColorCode::Black);
+            println!("Format error: {}", err);
+        }
+    }
+    vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
 }
