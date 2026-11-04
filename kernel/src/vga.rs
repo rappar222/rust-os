@@ -296,6 +296,26 @@ pub fn backspace() {
     if let Some(ref mut writer) = *WRITER.lock() {
         writer.backspace();
     }
+    crate::serial::_print(format_args!("\x08 \x08"));
+}
+
+pub fn get_resolution() -> (usize, usize, usize, usize) {
+    if let Some(ref writer) = *WRITER.lock() {
+        (
+            writer.info.width,
+            writer.info.height,
+            writer.max_cols,
+            writer.max_rows,
+        )
+    } else {
+        (1280, 720, 160, 45)
+    }
+}
+
+pub fn put_char_at(col: usize, row: usize, c: char, fg: ColorCode, bg: ColorCode) {
+    if let Some(ref mut writer) = *WRITER.lock() {
+        writer.draw_char_at(col, row, c, fg, bg);
+    }
 }
 
 #[doc(hidden)]

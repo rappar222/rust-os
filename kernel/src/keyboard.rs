@@ -1,7 +1,15 @@
 use spin::Mutex;
 use x86_64::instructions::port::Port;
 
-const QUEUE_SIZE: usize = 128;
+pub const KEY_UP: char = '\x11';
+pub const KEY_DOWN: char = '\x12';
+pub const KEY_LEFT: char = '\x13';
+pub const KEY_RIGHT: char = '\x14';
+pub const CTRL_C: char = '\x03';
+pub const CTRL_L: char = '\x0C';
+pub const CTRL_D: char = '\x04';
+
+const QUEUE_SIZE: usize = 256;
 
 pub struct KeyQueue {
     buffer: [char; QUEUE_SIZE],
@@ -58,28 +66,36 @@ pub fn poll_ps2() {
     }
 }
 
+pub fn try_read_char() -> Option<char> {
+    if let Some(c) = pop_key() {
+        return Some(c);
+    }
+    poll_ps2();
+    if let Some(c) = pop_key() {
+        return Some(c);
+    }
+    if let Some(c) = crate::serial::receive_char() {
+        return Some(c);
+    }
+    None
+}
+
 pub fn read_char() -> char {
     loop {
-        // 1. Check PS/2 queue (populated by interrupt handler)
-        if let Some(c) = pop_key() {
+        if let Some(c) = try_read_char() {
             return c;
         }
-
-        // 2. Poll PS/2 controller directly (works even if interrupts are masked/disabled by UEFI)
-        poll_ps2();
-        if let Some(c) = pop_key() {
-            return c;
-        }
-
-        // 3. Check serial port input (COM1)
-        if let Some(c) = crate::serial::receive_char() {
-            return c;
-        }
-
-        // Slight pause to allow hardware to register
         for _ in 0..100 {
             core::hint::spin_loop();
         }
+    }
+}
+
+pub fn sleep_ticks(ticks: u64) {
+    let start = crate::interrupts::ticks();
+    while crate::interrupts::ticks().wrapping_sub(start) < ticks {
+        poll_ps2();
+        core::hint::spin_loop();
     }
 }
 
@@ -105,14 +121,10 @@ pub fn init() {
         if (cmd_port.read() & 0x01) != 0 {
             let mut config = data_port.read();
 
-            // Bit 0: First PS/2 port interrupt enabled (IRQ 1)
-            // Bit 4: First PS/2 port clock disabled (clear to enable clock!)
-            // Bit 6: First PS/2 port translation (scancode set 1 translation)
             config |= 0x01;  // enable IRQ 1
             config &= !0x10; // enable clock
-            config |= 0x40;  // enable translation
+            config |= 0x40;  // enable scancode set 1 translation
 
-            // Write Controller Configuration Byte (command 0x60)
             cmd_port.write(0x60);
             while (cmd_port.read() & 0x02) != 0 {}
             data_port.write(config);
@@ -134,6 +146,7 @@ pub fn init() {
 
 pub struct KeyboardState {
     shift_pressed: bool,
+    ctrl_pressed: bool,
     caps_lock: bool,
     extended: bool,
 }
@@ -142,6 +155,7 @@ impl KeyboardState {
     pub const fn new() -> Self {
         Self {
             shift_pressed: false,
+            ctrl_pressed: false,
             caps_lock: false,
             extended: false,
         }
@@ -154,14 +168,14 @@ static KB_STATE: Mutex<KeyboardState> = Mutex::new(KeyboardState::new());
 static SCANCODE_TABLE: [char; 58] = [
     '\0', '\x1B', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\x08',
     '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
-    '\0', // Left Control
+    '\0', // Left Control (0x1D)
     'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',
-    '\0', // Left Shift
+    '\0', // Left Shift (0x2A)
     '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/',
-    '\0', // Right Shift
+    '\0', // Right Shift (0x36)
     '*',
-    '\0', // Left Alt
-    ' ',  // Space
+    '\0', // Left Alt (0x38)
+    ' ',  // Space (0x39)
 ];
 
 // US QWERTY Scancode Set 1 (Shifted)
@@ -191,10 +205,24 @@ pub fn handle_scancode(scancode: u8) {
 
     if state.extended {
         state.extended = false;
+        if !is_break {
+            match code {
+                0x48 => { KEY_QUEUE.lock().push(KEY_UP); }
+                0x50 => { KEY_QUEUE.lock().push(KEY_DOWN); }
+                0x4B => { KEY_QUEUE.lock().push(KEY_LEFT); }
+                0x4D => { KEY_QUEUE.lock().push(KEY_RIGHT); }
+                0x53 => { KEY_QUEUE.lock().push('\x08'); } // Delete -> Backspace
+                _ => {}
+            }
+        }
         return;
     }
 
     match code {
+        0x1D => {
+            // Left or Right Control
+            state.ctrl_pressed = !is_break;
+        }
         0x2A | 0x36 => {
             // Left Shift or Right Shift
             state.shift_pressed = !is_break;
@@ -206,25 +234,41 @@ pub fn handle_scancode(scancode: u8) {
             }
         }
         _ => {
-            if !is_break {
-                if (code as usize) < SCANCODE_TABLE.len() {
-                    let mut ch = if state.shift_pressed {
-                        SCANCODE_TABLE_SHIFT[code as usize]
-                    } else {
-                        SCANCODE_TABLE[code as usize]
-                    };
+            if !is_break && (code as usize) < SCANCODE_TABLE.len() {
+                let mut ch = if state.shift_pressed {
+                    SCANCODE_TABLE_SHIFT[code as usize]
+                } else {
+                    SCANCODE_TABLE[code as usize]
+                };
 
-                    if state.caps_lock && ch.is_ascii_alphabetic() {
-                        if state.shift_pressed {
-                            ch = ch.to_ascii_lowercase();
-                        } else {
-                            ch = ch.to_ascii_uppercase();
+                if state.ctrl_pressed {
+                    match ch.to_ascii_lowercase() {
+                        'c' => {
+                            KEY_QUEUE.lock().push(CTRL_C);
+                            return;
                         }
+                        'l' => {
+                            KEY_QUEUE.lock().push(CTRL_L);
+                            return;
+                        }
+                        'd' => {
+                            KEY_QUEUE.lock().push(CTRL_D);
+                            return;
+                        }
+                        _ => {}
                     }
+                }
 
-                    if ch != '\0' {
-                        KEY_QUEUE.lock().push(ch);
+                if state.caps_lock && ch.is_ascii_alphabetic() {
+                    if state.shift_pressed {
+                        ch = ch.to_ascii_lowercase();
+                    } else {
+                        ch = ch.to_ascii_uppercase();
                     }
+                }
+
+                if ch != '\0' {
+                    KEY_QUEUE.lock().push(ch);
                 }
             }
         }

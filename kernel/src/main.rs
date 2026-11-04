@@ -14,9 +14,14 @@ pub mod memory;
 pub mod allocator;
 pub mod ata;
 pub mod fs;
+pub mod rtc;
+pub mod sysinfo;
+pub mod pkg;
+pub mod applets;
 pub mod power;
 pub mod shell;
 
+use alloc::format;
 use bootloader_api::{entry_point, BootInfo, BootloaderConfig};
 use core::panic::PanicInfo;
 
@@ -31,7 +36,7 @@ entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // 1. Initialize Serial port (COM1 0x3F8) for immediate logging
     serial::init();
-    serial_println!("=== RustOS Boot Sequence Started ===");
+    serial_println!("=== RustOS (Arch Linux Base) Boot Sequence Started ===");
 
     // 2. Initialize Graphical Framebuffer Console
     if let Some(framebuffer) = boot_info.framebuffer.as_mut() {
@@ -40,16 +45,15 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         serial_println!("[WARN] Framebuffer not available, running in headless serial mode");
     }
 
-    println!("[OK] Display subsystem initialized");
+    println!(":: running early hook [udev]");
+    println!(":: Triggering uevents...");
 
     // 3. Initialize GDT & TSS (with separate double-fault stack)
     gdt::init();
-    println!("[OK] GDT & TSS initialized");
 
-    // 4. Initialize IDT, 8259 PIC, and PIT Timer (100 Hz)
+    // 4. Initialize IDT, 8259 PIC, PIT Timer (100 Hz), and PS/2 Keyboard
     interrupts::init();
     keyboard::init();
-    println!("[OK] IDT, PIC, PIT timer (100Hz), and PS/2 keyboard initialized");
 
     // 5. Initialize Memory & Dynamic Heap
     let phys_offset = boot_info
@@ -58,46 +62,82 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         .expect("Physical memory offset missing from bootloader");
 
     let mem_stats = memory::inspect_memory(&boot_info.memory_regions);
-    println!(
-        "Memory: Detected {} MB usable / {} MB total",
-        mem_stats.total_usable_bytes / (1024 * 1024),
-        mem_stats.total_memory_bytes / (1024 * 1024)
-    );
 
     match memory::init_heap_from_boot_info(&mut boot_info.memory_regions, phys_offset) {
         Ok((heap_start, heap_size)) => {
-            println!(
-                "[OK] Dynamic heap initialized: {} MB @ {:#x}",
+            sysinfo::klog(&format!(
+                "Linux version 6.12.0-arch1-1-rustos (root@archiso) (rustc 1.101.0-nightly)"
+            ));
+            sysinfo::klog(&format!(
+                "Memory: {}K/{}K available (Heap {}MB @ {:#x})",
+                mem_stats.total_usable_bytes / 1024,
+                mem_stats.total_memory_bytes / 1024,
                 heap_size / (1024 * 1024),
                 heap_start
-            );
+            ));
         }
         Err(e) => {
             println!("[WARN] Failed to initialize heap: {}", e);
         }
     }
 
-    // 6. Initialize ATA Hard Drive & Persistent Storage
+    let cpu = sysinfo::get_cpu_info();
+    sysinfo::klog(&format!(
+        "smpboot: CPU0: {} {} (family: {:#x}, model: {:#x}, stepping: {:#x})",
+        cpu.vendor,
+        cpu.model_name,
+        cpu.family,
+        cpu.model,
+        cpu.stepping
+    ));
+
+    let pci_devs = sysinfo::scan_pci();
+    sysinfo::klog(&format!("PCI: Probed bus 00, detected {} hardware devices", pci_devs.len()));
+
+    // 6. Initialize ATA Hard Drive & Persistent Storage (with in-memory Arch FHS fallback)
     match ata::init() {
         Ok(drive_info) => {
+            sysinfo::klog(&format!(
+                "ata1.00: ATA-7: {}, {} MB ({} sectors)",
+                drive_info.model_str(),
+                drive_info.size_mb,
+                drive_info.sectors
+            ));
             println!(
-                "[OK] Hard Drive detected: {} ({} MB)",
+                ":: Mounting '/dev/sda2' ({}, {} MB) on real root...",
                 drive_info.model_str(),
                 drive_info.size_mb
             );
-            match fs::init() {
-                Ok(()) => println!("[OK] Persistent storage (SimpleFS) mounted"),
-                Err(e) => println!("[WARN] Filesystem error: {}", e),
-            }
         }
         Err(e) => {
-            println!("[INFO] Storage: {}", e);
+            sysinfo::klog(&format!("ata1: no writable disk ({}), mounting archiso tmpfs root", e));
+            println!(":: No writable ATA drive ({}), mounting in-memory Arch rootfs...", e);
         }
     }
 
-    println!("[OK] System initialized successfully. Launching interactive terminal shell...");
+    if let Err(e) = fs::init() {
+        println!("[WARN] Filesystem init warning: {}", e);
+    } else {
+        sysinfo::klog("EXT4-fs / SimpleFS (sda2): mounted filesystem with ordered data mode");
+    }
 
-    // 6. Launch the interactive terminal shell
+    // 7. Initialize Arch Package Database (pacman + AUR)
+    pkg::init();
+    sysinfo::klog("systemd[1]: Reached target Multi-User System (Arch Linux / RustOS).");
+
+    let dt = rtc::read_rtc();
+    println!(
+        "[  OK  ] Started RustOS Arch Linux Userland ({} {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC).",
+        dt.weekday_name(),
+        dt.year,
+        dt.month,
+        dt.day,
+        dt.hour,
+        dt.minute,
+        dt.second
+    );
+
+    // 8. Launch the interactive Arch-style terminal shell
     shell::run_shell();
 }
 
