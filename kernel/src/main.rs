@@ -48,7 +48,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     // 4. Initialize IDT, 8259 PIC, and PIT Timer (100 Hz)
     interrupts::init();
-    println!("[OK] IDT, PIC, and PIT timer (100Hz) initialized");
+    keyboard::init();
+    println!("[OK] IDT, PIC, PIT timer (100Hz), and PS/2 keyboard initialized");
 
     // 5. Initialize Memory & Dynamic Heap
     let phys_offset = boot_info

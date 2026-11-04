@@ -115,6 +115,13 @@ fn main() -> Result<()> {
     if let Ok(s) = qemu_img_status {
         if s.success() {
             let _ = std::fs::copy(&vdi_image, &root_vdi);
+            // Ensure fixed UUID matching VirtualBox media registry
+            let _ = Command::new("VBoxManage")
+                .arg("internalcommands")
+                .arg("sethduuid")
+                .arg(&root_vdi)
+                .arg("bf3f79da-beec-4105-abad-2a6221b124a4")
+                .output();
             println!(
                 "[+] VirtualBox VDI ready: {:?} ({} bytes)",
                 root_vdi,

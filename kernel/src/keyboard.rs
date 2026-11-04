@@ -21,7 +21,6 @@ impl KeyQueue {
     pub fn push(&mut self, c: char) -> bool {
         let next_write = (self.write_pos + 1) % QUEUE_SIZE;
         if next_write == self.read_pos {
-            // Buffer full, drop key
             false
         } else {
             self.buffer[self.write_pos] = c;
@@ -47,19 +46,89 @@ pub fn pop_key() -> Option<char> {
     KEY_QUEUE.lock().pop()
 }
 
+pub fn poll_ps2() {
+    let mut status_port: Port<u8> = Port::new(0x64);
+    let status = unsafe { status_port.read() };
+    // Bit 0 = Output Buffer Full (data available in 0x60)
+    // Bit 5 = Mouse data (0 = keyboard data, 1 = mouse data)
+    if (status & 0x01) != 0 && (status & 0x20) == 0 {
+        let mut data_port: Port<u8> = Port::new(0x60);
+        let scancode = unsafe { data_port.read() };
+        handle_scancode(scancode);
+    }
+}
+
 pub fn read_char() -> char {
     loop {
-        // 1. Check PS/2 hardware keyboard queue
+        // 1. Check PS/2 queue (populated by interrupt handler)
         if let Some(c) = pop_key() {
             return c;
         }
 
-        // 2. Check serial port input (COM1)
+        // 2. Poll PS/2 controller directly (works even if interrupts are masked/disabled by UEFI)
+        poll_ps2();
+        if let Some(c) = pop_key() {
+            return c;
+        }
+
+        // 3. Check serial port input (COM1)
         if let Some(c) = crate::serial::receive_char() {
             return c;
         }
 
-        x86_64::instructions::hlt();
+        // Slight pause to allow hardware to register
+        for _ in 0..100 {
+            core::hint::spin_loop();
+        }
+    }
+}
+
+pub fn init() {
+    let mut cmd_port: Port<u8> = Port::new(0x64);
+    let mut data_port: Port<u8> = Port::new(0x60);
+
+    unsafe {
+        // Drain any stale data in buffer
+        while (cmd_port.read() & 0x01) != 0 {
+            let _ = data_port.read();
+        }
+
+        // Enable First PS/2 port (Keyboard)
+        cmd_port.write(0xAE);
+
+        // Read Controller Configuration Byte (command 0x20)
+        cmd_port.write(0x20);
+        let mut timeout = 10_000;
+        while (cmd_port.read() & 0x01) == 0 && timeout > 0 {
+            timeout -= 1;
+        }
+        if (cmd_port.read() & 0x01) != 0 {
+            let mut config = data_port.read();
+
+            // Bit 0: First PS/2 port interrupt enabled (IRQ 1)
+            // Bit 4: First PS/2 port clock disabled (clear to enable clock!)
+            // Bit 6: First PS/2 port translation (scancode set 1 translation)
+            config |= 0x01;  // enable IRQ 1
+            config &= !0x10; // enable clock
+            config |= 0x40;  // enable translation
+
+            // Write Controller Configuration Byte (command 0x60)
+            cmd_port.write(0x60);
+            while (cmd_port.read() & 0x02) != 0 {}
+            data_port.write(config);
+        }
+
+        // Send "Enable Scanning" command (0xF4) to the keyboard
+        while (cmd_port.read() & 0x02) != 0 {}
+        data_port.write(0xF4);
+
+        // Drain any response (e.g. ACK 0xFA)
+        for _ in 0..5000 {
+            if (cmd_port.read() & 0x01) != 0 {
+                let _ = data_port.read();
+                break;
+            }
+        }
     }
 }
 
@@ -122,13 +191,12 @@ pub fn handle_scancode(scancode: u8) {
 
     if state.extended {
         state.extended = false;
-        // Extended keys (arrows, etc.) can be handled if needed
         return;
     }
 
     match code {
         0x2A | 0x36 => {
-            // Left Shift (0x2A) or Right Shift (0x36)
+            // Left Shift or Right Shift
             state.shift_pressed = !is_break;
         }
         0x3A => {
@@ -146,7 +214,6 @@ pub fn handle_scancode(scancode: u8) {
                         SCANCODE_TABLE[code as usize]
                     };
 
-                    // Handle Caps Lock for letters
                     if state.caps_lock && ch.is_ascii_alphabetic() {
                         if state.shift_pressed {
                             ch = ch.to_ascii_lowercase();

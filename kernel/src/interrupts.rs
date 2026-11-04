@@ -83,7 +83,10 @@ pub fn init_pit() {
 
 pub fn init() {
     init_idt();
-    unsafe { PICS.lock().initialize() };
+    unsafe {
+        PICS.lock().initialize();
+        PICS.lock().write_masks(0b1111_1000, 0b1111_1111);
+    };
     init_pit();
     x86_64::instructions::interrupts::enable();
 }
