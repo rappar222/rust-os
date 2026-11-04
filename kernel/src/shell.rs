@@ -717,7 +717,7 @@ fn execute_command(state: &mut ShellState, cmd_line: &str) {
                 println!(":: RustOS Floating Window Compositor is not installed.");
                 println!(":: The system is currently running in live environment mode.");
                 vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
-                println!(":: Please run 'rustos-install' or 'archinstall' to install RustOS to disk");
+                println!(":: Please run 'rustos-install' to install RustOS to disk");
                 println!(":: and enable the graphical floating compositor desktop environment.");
                 vga::set_colors(ColorCode::White, ColorCode::Black);
             } else {

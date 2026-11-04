@@ -8,7 +8,7 @@ pub fn run_installer(auto_yes: bool) {
     vga::clear_screen();
     vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
     println!("==========================================================================");
-    println!("             RustOS Guided Installer (archinstall-style)                  ");
+    println!("                   RustOS Guided System Installer                         ");
     println!("==========================================================================");
     vga::set_colors(ColorCode::White, ColorCode::Black);
     println!(" Welcome to the RustOS installation assistant!");

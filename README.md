@@ -39,9 +39,9 @@
 - **Custom Package Compilation (`makepkg`)**:
   - Edit `/root/PKGBUILD` with `nano PKGBUILD` and run `makepkg -si` to build and install your own custom executable package directly inside RustOS.
 
-### 4. Interactive Guided Installer (`archinstall` style)
-- **Guided Setup (`archinstall` / `rustos-install` / `install`)**:
-  - Interactive multi-step wizard modeled after the Arch Linux guided installer (`archinstall`).
+### 4. Interactive Guided System Installer
+- **Guided Setup (`rustos-install` / `install`)**:
+  - Interactive multi-step wizard for configuring storage, localization, networking, and desktop environment.
   - **Locale & Keymap**: Choose between English (US/UK), German, Romanian, French, Spanish, Italian.
   - **Timezone**: Select between UTC, Europe/Bucharest, America/New_York, Europe/London, Europe/Berlin, Asia/Tokyo.
   - **Package Mirror**: Select Tier-1 Arch & RustOS package mirrors (Worldwide geo, Kernel.org, Cloudflare CDN).
