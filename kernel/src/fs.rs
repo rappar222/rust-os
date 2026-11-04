@@ -220,10 +220,10 @@ impl SimpleFs {
             let _ = self.mkdir_internal(d, false);
         }
 
-        // Populate standard Arch Linux configuration files
+        // Populate standard configuration files
         let _ = self.write_file_internal(
             "/etc/os-release",
-            b"NAME=\"RustOS Arch Edition\"\nPRETTY_NAME=\"RustOS (Arch Linux Inspired, x86_64)\"\nID=rustos\nID_LIKE=arch\nBUILD_ID=rolling\nANSI_COLOR=\"38;2;23;147;209\"\nHOME_URL=\"https://github.com/rappar222/rust-os\"\n",
+            b"NAME=\"RustOS\"\nPRETTY_NAME=\"RustOS (Inspired by Arch Linux, x86_64 in Rust)\"\nID=rustos\nID_LIKE=arch\nBUILD_ID=rolling\nANSI_COLOR=\"38;2;222;85;28\"\nHOME_URL=\"https://github.com/rappar222/rust-os\"\n",
             0o644,
             false,
         );
@@ -267,7 +267,7 @@ impl SimpleFs {
 
         let _ = self.write_file_internal(
             "/root/welcome.txt",
-            b"Welcome to RustOS (Arch Linux Edition)!\n\nQuick Tips:\n  - Press TAB to autocomplete commands, flags, packages, and filenames.\n  - Press UP / DOWN arrows to cycle through command history.\n  - Run 'neofetch' or 'fastfetch' for system overview.\n  - Run 'pacman -Ss <query>' or 'pacman -S <pkg>' to install official packages.\n  - Run 'yay -S <pkg>' or 'paru -S <pkg>' to build & install AUR packages!\n  - Run 'makepkg -si' in /root to build the sample PKGBUILD!\n",
+            b"Welcome to RustOS!\n\nThis operating system is written from scratch in Rust, inspired by Arch Linux.\nIt uses package definitions from Arch Linux repositories and the AUR.\n\nQuick Tips:\n  - Press TAB to autocomplete commands, flags, packages, and filenames.\n  - Press UP / DOWN arrows to cycle through command history.\n  - Run 'neofetch' or 'fastfetch' for system overview.\n  - Run 'pacman -Ss <query>' or 'pacman -S <pkg>' to install packages.\n  - Run 'yay -S <pkg>' or 'paru -S <pkg>' to build & install AUR packages!\n  - Run 'makepkg -si' in /root to build the sample PKGBUILD!\n",
             0o644,
             false,
         );

@@ -39,7 +39,7 @@ pub fn cmd_neofetch(rainbow: bool) {
     let info_lines = [
         ("root", "@rustos"),
         ("--------------", ""),
-        ("OS", ": RustOS x86_64"),
+        ("OS", ": RustOS x86_64 (Inspired by Arch Linux)"),
         ("Host", ": Bare-Metal / Virtual Machine (x86_64)"),
         ("Kernel", ": 0.2.0-rustos (no_std)"),
         ("Uptime", &format!(": {}h {}m {}s", hrs, mins % 60, secs % 60)),

@@ -65,7 +65,7 @@ impl ShellState {
         env_vars.push((String::from("TERM"), String::from("linux-vga-256color")));
         env_vars.push((String::from("EDITOR"), String::from("nano")));
         env_vars.push((String::from("LANG"), String::from("en_US.UTF-8")));
-        env_vars.push((String::from("DISTRO"), String::from("RustOS (Arch Linux Base)")));
+        env_vars.push((String::from("DISTRO"), String::from("RustOS (Inspired by Arch Linux)")));
 
         let mut aliases = Vec::new();
         aliases.push((String::from("ll"), String::from("ls -la")));
@@ -165,8 +165,9 @@ pub fn run_shell() -> ! {
     crate::applets::cmd_neofetch(false);
 
     vga::set_colors(ColorCode::LightGray, ColorCode::Black);
-    println!(" Welcome to RustOS (Arch Linux x86_64 Rolling Edition)!");
+    println!(" Welcome to RustOS (x86_64 Bare Metal in Rust)!");
     vga::set_colors(ColorCode::DarkGray, ColorCode::Black);
+    println!(" Inspired by Arch Linux: uses pacman & AUR package models, rolling userland.");
     println!(" Tip: Press [TAB] for command/package/file completion, [UP]/[DOWN] for history.");
     println!(" Try: pacman -Syu | pacman -Ss | yay -S cbonsai | neofetch | ls -la | help\n");
 
@@ -1361,8 +1362,8 @@ fn cmd_hostnamectl(state: &mut ShellState, args: &[&str]) {
     println!(" Static hostname: {}", state.hostname);
     println!("       Icon name: computer-vm");
     println!("         Chassis: vm");
-    println!("Operating System: RustOS (Arch Linux Base)");
-    println!("          Kernel: RustOS 6.12.0-arch1-1-rustos");
+    println!("Operating System: RustOS (Inspired by Arch Linux)");
+    println!("          Kernel: RustOS 0.2.0-rustos");
     println!("    Architecture: x86-64");
 }
 
@@ -1719,18 +1720,18 @@ fn cmd_man(args: &[&str]) {
 fn cmd_help() {
     vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
     println!("==========================================================================");
-    println!("  RustOS v0.2.0 (Arch Linux Edition) - Interactive Shell Command Reference");
+    println!("  RustOS v0.2.0 (Inspired by Arch Linux) - Interactive Shell Reference");
     println!("==========================================================================");
 
     vga::set_colors(ColorCode::Yellow, ColorCode::Black);
-    println!(" [Arch Package Management & AUR]");
+    println!(" [Arch Linux Repository Packages & AUR]");
     vga::set_colors(ColorCode::White, ColorCode::Black);
-    println!("  pacman -Syu            Sync Arch mirrors (core/extra) & full system upgrade");
-    println!("  pacman -S <pkg>        Install official packages (cmatrix, btop, cowsay, git...)");
-    println!("  pacman -Ss <query>     Search packages in official repositories");
+    println!("  pacman -Syu            Sync Arch mirror databases & check for upgrades");
+    println!("  pacman -S <pkg>        Install Arch packages (cmatrix, btop, cowsay, git...)");
+    println!("  pacman -Ss <query>     Search packages from Arch repositories");
     println!("  pacman -Q / -Qi / -R   List, inspect, or remove installed packages");
     println!("  yay -S <pkg> / paru    Install from AUR (cbonsai, pipes-rs, hyfetch, tty-clock)");
-    println!("  yay -Ss <query>        Search across core, extra, and AUR repositories");
+    println!("  yay -Ss <query>        Search across standard repositories and AUR");
     println!("  makepkg -si            Build & install a custom package from a PKGBUILD file");
 
     vga::set_colors(ColorCode::Yellow, ColorCode::Black);
@@ -1765,13 +1766,14 @@ fn cmd_echo(args: &[&str]) {
 fn cmd_info() {
     vga::set_colors(ColorCode::LightGreen, ColorCode::Black);
     println!("--------------------------------------------------");
-    println!(" RustOS - Arch-Inspired Bare-Metal x86_64 OS");
+    println!(" RustOS - x86_64 Bare-Metal OS in Rust");
     println!("--------------------------------------------------");
     vga::set_colors(ColorCode::White, ColorCode::Black);
+    println!(" Design       : Inspired by Arch Linux");
     println!(" Architecture : x86_64 (64-bit Long Mode)");
-    println!(" Kernel Model : Monolithic / Freestanding no_std");
+    println!(" Kernel Model : Monolithic / Freestanding no_std Rust");
     println!(" File System  : SimpleFS v2 (Hierarchical FHS + ATA PIO)");
-    println!(" Pkg Manager  : pacman + yay/paru (AUR) + makepkg");
+    println!(" Packages     : Uses packages from Arch Linux & AUR (pacman, yay, paru)");
     println!(" Drivers      : VGA Framebuffer, PS/2 Keyboard, ATA PIO, PCI, CMOS RTC, UART");
     println!(" Compiler     : rustc 1.101.0-nightly");
 }

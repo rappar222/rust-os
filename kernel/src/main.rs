@@ -36,7 +36,7 @@ entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // 1. Initialize Serial port (COM1 0x3F8) for immediate logging
     serial::init();
-    serial_println!("=== RustOS (Arch Linux Base) Boot Sequence Started ===");
+    serial_println!("=== RustOS Boot Sequence Started ===");
 
     // 2. Initialize Graphical Framebuffer Console
     if let Some(framebuffer) = boot_info.framebuffer.as_mut() {
@@ -121,13 +121,13 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         sysinfo::klog("EXT4-fs / SimpleFS (sda2): mounted filesystem with ordered data mode");
     }
 
-    // 7. Initialize Arch Package Database (pacman + AUR)
+    // 7. Initialize Package Database (inspired by Arch Linux pacman + AUR)
     pkg::init();
-    sysinfo::klog("systemd[1]: Reached target Multi-User System (Arch Linux / RustOS).");
+    sysinfo::klog("systemd[1]: Reached target Multi-User System (RustOS).");
 
     let dt = rtc::read_rtc();
     println!(
-        "[  OK  ] Started RustOS Arch Linux Userland ({} {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC).",
+        "[  OK  ] Started RustOS Userland ({} {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC).",
         dt.weekday_name(),
         dt.year,
         dt.month,
