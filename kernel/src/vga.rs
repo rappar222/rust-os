@@ -22,6 +22,7 @@ pub enum ColorCode {
     LightMagenta = 13,
     Yellow = 14,
     White = 15,
+    RustOrange = 16,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -40,7 +41,7 @@ impl ColorCode {
             ColorCode::Cyan => RgbColor { r: 0, g: 170, b: 170 },
             ColorCode::Red => RgbColor { r: 170, g: 0, b: 0 },
             ColorCode::Magenta => RgbColor { r: 170, g: 0, b: 170 },
-            ColorCode::Brown => RgbColor { r: 170, g: 85, b: 0 },
+            ColorCode::Brown => RgbColor { r: 215, g: 106, b: 40 }, // Rich Rust Orange
             ColorCode::LightGray => RgbColor { r: 170, g: 170, b: 170 },
             ColorCode::DarkGray => RgbColor { r: 85, g: 85, b: 85 },
             ColorCode::LightBlue => RgbColor { r: 85, g: 85, b: 255 },
@@ -48,8 +49,9 @@ impl ColorCode {
             ColorCode::LightCyan => RgbColor { r: 85, g: 255, b: 255 },
             ColorCode::LightRed => RgbColor { r: 255, g: 85, b: 85 },
             ColorCode::LightMagenta => RgbColor { r: 255, g: 85, b: 255 },
-            ColorCode::Yellow => RgbColor { r: 255, g: 255, b: 85 },
+            ColorCode::Yellow => RgbColor { r: 245, g: 165, b: 65 }, // Amber / Warm Rust Highlight
             ColorCode::White => RgbColor { r: 255, g: 255, b: 255 },
+            ColorCode::RustOrange => RgbColor { r: 222, g: 85, b: 28 }, // Official Rust reddish-orange #DE551C
         }
     }
 }

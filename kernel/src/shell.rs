@@ -122,7 +122,7 @@ impl ShellState {
 }
 
 pub fn print_prompt(state: &ShellState) {
-    vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
+    vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
     print!("[");
     if state.user == "root" {
         vga::set_colors(ColorCode::LightRed, ColorCode::Black);
@@ -132,14 +132,14 @@ pub fn print_prompt(state: &ShellState) {
     print!("{}", state.user);
     vga::set_colors(ColorCode::LightGray, ColorCode::Black);
     print!("@");
-    vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
+    vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
     print!("{}", state.hostname);
     vga::set_colors(ColorCode::White, ColorCode::Black);
     print!(" {}", state.display_cwd());
-    vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
+    vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
     print!("]");
     if state.user == "root" {
-        vga::set_colors(ColorCode::LightRed, ColorCode::Black);
+        vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
         print!("# ");
     } else {
         vga::set_colors(ColorCode::LightGreen, ColorCode::Black);

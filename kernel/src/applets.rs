@@ -18,33 +18,30 @@ pub fn cmd_neofetch(rainbow: bool) {
     let hrs = mins / 60;
 
     let logo = [
-        "                   -`                    ",
-        "                  .o+`                   ",
-        "                 `ooo/                   ",
-        "                `+oooo:                  ",
-        "               `+oooooo:                 ",
-        "               -+oooooo+:                ",
-        "             `/:-:++oooo+:               ",
-        "            `/++++/+++++++:              ",
-        "           `/++++++++++++++:             ",
-        "          `/+++ooooooooooooo/`           ",
-        "         ./ooosssso++osssssso+`          ",
-        "        .oossssso-````/ossssss+`         ",
-        "       -osssssso.      :ssssssso.        ",
-        "      :osssssss/        osssso+++.       ",
-        "     /ossssssss/        +ssssooo/-       ",
-        "   `/ossssso+/:-        -:/+osssso+-     ",
-        "  `+sso+:-`                 `.-/+oso:    ",
-        " `++:.                           `-/+/   ",
-        " .`                                 `/   ",
+        "               ______               ",
+        "            .-~~~~~~~~-.            ",
+        "          /   _  __  _   \\          ",
+        "      |==|   | ||  || |   |==|      ",
+        "      |==|   |_||__||_|   |==|      ",
+        "      |  |    ________    |  |      ",
+        "      |==|   |  ____  \\   |==|      ",
+        "      |==|   | |   _) |   |==|      ",
+        "      |  |   |  __  <     |  |      ",
+        "      |==|   | |  \\  \\    |==|      ",
+        "      |==|   |_|   \\__\\   |==|      ",
+        "      |  |    ________    |  |      ",
+        "      |==|    _  __  _    |==|      ",
+        "      |==|   | ||  || |   |==|      ",
+        "          \\  |_||__||_|  /          ",
+        "           `-..........-`           ",
     ];
 
     let info_lines = [
         ("root", "@rustos"),
         ("--------------", ""),
-        ("OS", ": RustOS Arch Linux x86_64"),
+        ("OS", ": RustOS x86_64"),
         ("Host", ": Bare-Metal / Virtual Machine (x86_64)"),
-        ("Kernel", ": 0.2.0-arch1-1-rustos (no_std)"),
+        ("Kernel", ": 0.2.0-rustos (no_std)"),
         ("Uptime", &format!(": {}h {}m {}s", hrs, mins % 60, secs % 60)),
         ("Packages", &format!(": {} (pacman), {} (aur)", pac_pkgs, aur_pkgs)),
         ("Shell", ": rsh 1.2.0 (Tab-completion + History)"),
@@ -73,7 +70,7 @@ pub fn cmd_neofetch(rainbow: bool) {
         let logo_color = if rainbow {
             pride_colors[i % pride_colors.len()]
         } else {
-            ColorCode::LightCyan
+            ColorCode::RustOrange
         };
         vga::set_colors(logo_color, ColorCode::Black);
         print!("{}", logo[i]);
@@ -81,20 +78,20 @@ pub fn cmd_neofetch(rainbow: bool) {
         if i < info_lines.len() {
             let (k, v) = info_lines[i];
             if i == 0 {
-                vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
+                vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
                 print!("{}", k);
                 vga::set_colors(ColorCode::White, ColorCode::Black);
                 println!("{}", v);
             } else if i == 1 {
-                vga::set_colors(ColorCode::LightGray, ColorCode::Black);
+                vga::set_colors(ColorCode::DarkGray, ColorCode::Black);
                 println!("{}", k);
             } else {
-                vga::set_colors(logo_color, ColorCode::Black);
+                vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
                 print!("{}", k);
                 vga::set_colors(ColorCode::White, ColorCode::Black);
                 println!("{}", v);
             }
-        } else if i == info_lines.len() + 1 {
+        } else if i == info_lines.len() {
             let palette = [
                 ColorCode::Black,
                 ColorCode::Red,
@@ -110,7 +107,7 @@ pub fn cmd_neofetch(rainbow: bool) {
                 print!("███");
             }
             println!();
-        } else if i == info_lines.len() + 2 {
+        } else if i == info_lines.len() + 1 {
             let palette2 = [
                 ColorCode::DarkGray,
                 ColorCode::LightRed,
@@ -138,26 +135,28 @@ pub fn cmd_pfetch() {
     let (pac_pkgs, aur_pkgs) = pkg::count_installed();
     let secs = interrupts::uptime_seconds();
     let small_logo = [
-        "      /\\      ",
-        "     /  \\     ",
-        "    /\\   \\    ",
-        "   /  __  \\   ",
-        "  /  (  )  \\  ",
-        " / __|  |__\\\\ ",
-        "/.`        `.\\",
+        "   _.._   ",
+        " /|==||\\  ",
+        "| |__|| | ",
+        "|  ____  |",
+        "| | _) | |",
+        "| |__\\ | |",
+        " \\|==||/  ",
+        "   \"\"\"\"   ",
     ];
     let lines = [
         format!("root@rustos"),
-        format!("os     RustOS Arch Linux x86_64"),
-        format!("kernel 0.2.0-arch1-1-rustos"),
+        format!("os     RustOS x86_64"),
+        format!("kernel 0.2.0-rustos"),
         format!("uptime {}m {}s", secs / 60, secs % 60),
         format!("pkgs   {} ({} pacman, {} aur)", pac_pkgs + aur_pkgs, pac_pkgs, aur_pkgs),
         format!("cpu    {}", cpu.model_name),
         format!("memory 4M / 128M"),
+        format!("shell  rsh 1.2.0"),
     ];
     println!();
     for i in 0..small_logo.len() {
-        vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
+        vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
         print!("{}  ", small_logo[i]);
         vga::set_colors(ColorCode::White, ColorCode::Black);
         println!("{}", lines[i]);
