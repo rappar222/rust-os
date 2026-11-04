@@ -671,6 +671,21 @@ pub fn installed_binaries() -> Vec<String> {
     bins
 }
 
+pub fn install_all_packages() {
+    let mut mgr = PKG_MGR.lock();
+    for spec in REPO_CATALOG.iter() {
+        if !mgr.installed.iter().any(|p| p == spec.name) {
+            mgr.installed.push(String::from(spec.name));
+            if !spec.binary.is_empty() {
+                let bin_path = format!("/usr/bin/{}", spec.binary);
+                let stub = format!("#!/bin/rsh\n# ELF 64-bit LSB pie executable ({}-{})\n", spec.name, spec.version);
+                let _ = fs::write_executable(&bin_path, stub.as_bytes());
+            }
+        }
+    }
+    save_db(&mgr.installed);
+}
+
 fn draw_progress_bar(label: &str) {
     vga::set_colors(ColorCode::White, ColorCode::Black);
     print!(" {:36} [", label);

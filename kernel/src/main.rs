@@ -20,6 +20,8 @@ pub mod pkg;
 pub mod applets;
 pub mod power;
 pub mod shell;
+pub mod installer;
+pub mod arch_commands;
 
 use alloc::format;
 use bootloader_api::{entry_point, BootInfo, BootloaderConfig};

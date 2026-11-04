@@ -10,23 +10,33 @@ use crate::interrupts::uptime_seconds;
 use crate::allocator::get_heap_info;
 use crate::fs;
 
-const BUILTIN_COMMANDS: &[&str] = &[
-    "help", "clear", "echo", "cd", "pwd", "ls", "ll", "la", "dir",
-    "mkdir", "rmdir", "touch", "cat", "write", "append", "cp", "mv", "rm",
-    "chmod", "stat", "head", "tail", "wc", "grep", "find", "tree", "nano", "vim", "edit",
-    "pacman", "yay", "paru", "makepkg",
+pub const ALL_COMMANDS_LIST: &[&str] = &[
+    "help", "clear", "reset", "echo", "printf", "cd", "pwd", "ls", "ll", "la", "dir", "vdir",
+    "mkdir", "rmdir", "touch", "cat", "tac", "write", "append", "cp", "mv", "rm", "shred",
+    "chmod", "chown", "chgrp", "stat", "file", "head", "tail", "wc", "nl", "grep", "egrep", "fgrep",
+    "find", "tree", "diff", "cmp", "comm", "sort", "uniq", "tr", "cut", "paste", "sed", "awk",
+    "nano", "vim", "vi", "edit", "less", "more",
+    "pacman", "yay", "paru", "makepkg", "pacstrap", "arch-chroot", "genfstab", "install", "rustos-install",
     "neofetch", "fastfetch", "hyfetch", "pfetch", "onefetch",
-    "uname", "arch", "whoami", "id", "hostname", "hostnamectl",
-    "date", "timedatectl", "uptime", "lscpu", "lspci", "lsblk", "lsmod",
-    "free", "df", "du", "mount", "ps", "top", "htop", "btop",
-    "systemctl", "journalctl", "dmesg", "ip", "ifconfig", "ping", "curl", "wget",
-    "env", "export", "unset", "alias", "which", "type", "history", "man", "source",
+    "uname", "arch", "whoami", "id", "groups", "users", "who", "w", "hostname", "hostnamectl",
+    "date", "timedatectl", "cal", "uptime", "lscpu", "lspci", "lsusb", "lsblk", "lsmod", "modprobe", "insmod", "rmmod",
+    "free", "df", "du", "mount", "umount", "fdisk", "parted", "mkfs", "fsck", "sync",
+    "ps", "pstree", "top", "htop", "btop", "kill", "killall", "pkill", "nice", "renice", "sleep",
+    "systemctl", "journalctl", "dmesg", "loginctl", "udevadm",
+    "ip", "ifconfig", "ping", "traceroute", "route", "netstat", "ss", "curl", "wget", "dig", "nslookup", "host",
+    "env", "export", "unset", "alias", "unalias", "which", "whereis", "type", "history", "man", "info", "apropos", "whatis", "source",
+    "tar", "gzip", "gunzip", "bzip2", "bunzip2", "xz", "unxz", "zstd", "unzstd", "zip", "unzip",
+    "md5sum", "sha1sum", "sha256sum", "sha512sum", "base64", "xxd", "hexdump", "od",
+    "basename", "dirname", "realpath", "readlink", "seq", "yes", "true", "false", "test", "expr",
+    "tee", "xargs", "envsubst", "timeout", "watch",
     "cowsay", "fortune", "figlet", "lolcat", "cmatrix", "pipes-rs", "cbonsai",
     "sl", "bat", "eza", "rg", "fd", "git", "cargo", "rustc", "python",
     "tty-clock", "nyancat", "asciiquarium", "rice",
-    "info", "colors", "mem", "alloc", "calc", "disk", "format",
+    "colors", "mem", "alloc", "calc", "disk", "format",
     "panic", "reboot", "shutdown", "poweroff", "exit",
 ];
+
+const BUILTIN_COMMANDS: &[&str] = ALL_COMMANDS_LIST;
 
 pub struct ShellState {
     pub cwd: String,
@@ -686,12 +696,19 @@ fn execute_command(state: &mut ShellState, cmd_line: &str) {
         "grep" => cmd_grep(state, &args),
         "find" => cmd_find(state, &args),
         "tree" => cmd_tree(state, &args),
-        "nano" | "edit" => {
+        "nano" | "vim" | "vi" | "edit" => {
             if args.is_empty() {
                 crate::applets::cmd_nano(&state.cwd, &["untitled.txt"]);
             } else {
                 crate::applets::cmd_nano(&state.cwd, &args);
             }
+        }
+        "install" | "rustos-install" => {
+            let auto_yes = args.contains(&"-y") || args.contains(&"--yes");
+            crate::installer::run_installer(auto_yes);
+            println!();
+            print_prompt(state);
+            return;
         }
         "pacman" => crate::pkg::cmd_pacman(&args),
         "yay" => crate::pkg::cmd_yay_or_paru("yay", &args),
@@ -769,7 +786,9 @@ fn execute_command(state: &mut ShellState, cmd_line: &str) {
         "reboot" => crate::power::reboot(),
         "shutdown" | "poweroff" | "exit" => crate::power::shutdown(),
         other => {
-            if !crate::applets::try_run_applet(other, &args, &state.cwd) {
+            if crate::arch_commands::dispatch_arch_command(other, &args, &state.cwd) {
+                // executed arch command
+            } else if !crate::applets::try_run_applet(other, &args, &state.cwd) {
                 let candidate = fs::normalize_path(&state.cwd, other);
                 if fs::exists(&candidate) {
                     if let Ok(data) = fs::read_file(&candidate) {
