@@ -126,15 +126,20 @@ RustOS/
 - **Rust** (nightly toolchain is automatically managed via `rust-toolchain.toml`)
 - **QEMU** (`qemu-system-x86_64`)
 
-### Build the Bootable Disk Image
+### Build Bootable Images (ISO, BIOS, UEFI)
 
 ```bash
 cargo run --package runner -- --no-run
 # or
 make build
+# or specifically for the ISO:
+make iso
 ```
 
-This compiles the kernel for `x86_64-unknown-none` and packages it into `target/bin/rustos-bios.img`.
+This compiles the kernel for `x86_64-unknown-none` and packages three bootable formats in `target/bin/`:
+- **`target/bin/rustos.iso`**: Bootable El Torito CD-ROM ISO (UEFI / VirtualBox / VMware / Proxmox compatible)
+- **`target/bin/rustos-bios.img`**: Raw MBR disk image (BIOS systems & raw USB flash drive)
+- **`target/bin/rustos-uefi.img`**: GPT disk image (UEFI hardware systems)
 
 ### Run in QEMU Emulator
 
@@ -143,6 +148,11 @@ To run with graphical window and serial output:
 cargo run
 # or
 make run
+```
+
+To run directly from the CD-ROM `.iso` image:
+```bash
+make run-iso
 ```
 
 To run in headless serial mode (ideal for terminal-only / remote servers):

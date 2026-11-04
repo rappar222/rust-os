@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 bootloader = "0.11.17"
 anyhow = "1.0"
+gpt = "3.1"

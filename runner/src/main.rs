@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use std::env;
-use std::path::PathBuf;
+use std::io::{Read, Seek};
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
 fn main() -> Result<()> {
@@ -9,6 +10,7 @@ fn main() -> Result<()> {
     let is_release = args.iter().any(|arg| arg == "--release");
     let no_run = args.iter().any(|arg| arg == "--no-run" || arg == "--build-only");
     let headless = args.iter().any(|arg| arg == "--headless" || arg == "--nographic");
+    let boot_iso = args.iter().any(|arg| arg == "--iso" || arg == "--cdrom");
 
     println!("==================================================");
     println!("        RustOS Builder & Runner System           ");
@@ -55,31 +57,59 @@ fn main() -> Result<()> {
         anyhow::bail!("Kernel binary not found at {:?}", kernel_binary);
     }
 
-    // 4. Generate BIOS bootable disk image
+    // 4. Create target/bin directory
     let out_dir = workspace_root.join("target").join("bin");
     std::fs::create_dir_all(&out_dir).context("Failed to create target/bin directory")?;
 
+    // 5. Generate BIOS bootable disk image (.img)
     let bios_image = out_dir.join("rustos-bios.img");
     println!("[*] Creating BIOS bootable disk image: {:?}", bios_image);
-
     let bios_boot = bootloader::BiosBoot::new(&kernel_binary);
     bios_boot
         .create_disk_image(&bios_image)
         .context("Failed to create BIOS disk image")?;
+    println!(
+        "[+] BIOS disk image ready ({} bytes)",
+        std::fs::metadata(&bios_image)?.len()
+    );
 
-    println!("[+] BIOS disk image ready ({} bytes)", std::fs::metadata(&bios_image)?.len());
+    // 6. Generate UEFI bootable disk image (.img)
+    let uefi_image = out_dir.join("rustos-uefi.img");
+    println!("[*] Creating UEFI bootable disk image: {:?}", uefi_image);
+    let uefi_boot = bootloader::UefiBoot::new(&kernel_binary);
+    uefi_boot
+        .create_disk_image(&uefi_image)
+        .context("Failed to create UEFI disk image")?;
+    println!(
+        "[+] UEFI disk image ready ({} bytes)",
+        std::fs::metadata(&uefi_image)?.len()
+    );
+
+    // 7. Generate bootable .ISO using xorriso and UEFI image
+    let iso_path = out_dir.join("rustos.iso");
+    create_iso(&uefi_image, &out_dir, &iso_path)?;
 
     if no_run {
-        println!("[+] Build complete. Skipping execution as requested.");
+        println!("[+] Build complete. Available images in target/bin/:");
+        println!("    - BIOS Disk Image : {:?}", bios_image);
+        println!("    - UEFI Disk Image : {:?}", uefi_image);
+        println!("    - Bootable ISO    : {:?}", iso_path);
         return Ok(());
     }
 
-    // 5. Launch QEMU
+    // 8. Launch QEMU
     println!("[*] Launching QEMU emulator...");
     let mut qemu = Command::new("qemu-system-x86_64");
-    qemu.arg("-drive")
-        .arg(format!("format=raw,file={}", bios_image.display()))
-        .arg("-m")
+
+    if boot_iso {
+        println!("[*] Booting from CD-ROM ISO: {:?}", iso_path);
+        qemu.arg("-cdrom").arg(&iso_path);
+    } else {
+        println!("[*] Booting from BIOS disk image: {:?}", bios_image);
+        qemu.arg("-drive").arg(format!("format=raw,file={}", bios_image.display()));
+    }
+
+    qemu.arg("-m")
         .arg("512M")
         .arg("-device")
         .arg("isa-debug-exit,iobase=0xf4,iosize=0x04");
@@ -92,7 +122,15 @@ fn main() -> Result<()> {
 
     // Pass any extra arguments that look like QEMU options
     for arg in &args {
-        if arg.starts_with("-") && arg != "--release" && arg != "--no-run" && arg != "--build-only" && arg != "--headless" && arg != "--nographic" {
+        if arg.starts_with("-")
+            && arg != "--release"
+            && arg != "--no-run"
+            && arg != "--build-only"
+            && arg != "--headless"
+            && arg != "--nographic"
+            && arg != "--iso"
+            && arg != "--cdrom"
+        {
             qemu.arg(arg);
         }
     }
@@ -101,6 +139,80 @@ fn main() -> Result<()> {
     let status = qemu.status().context("Failed to run QEMU emulator")?;
 
     handle_qemu_exit(status);
+    Ok(())
+}
+
+fn create_iso(uefi_image: &Path, out_dir: &Path, iso_path: &Path) -> Result<()> {
+    println!("[*] Creating bootable ISO image: {:?}", iso_path);
+
+    // 1. Temporary staging directory for ISO structure
+    let iso_root = out_dir.join("iso_root");
+    let _ = std::fs::remove_dir_all(&iso_root);
+    std::fs::create_dir_all(iso_root.join("boot"))?;
+
+    // 2. Extract the EFI system FAT partition from the GPT UEFI image
+    let efi_fat_img = iso_root.join("boot").join("efi.img");
+    {
+        let device = std::fs::File::open(uefi_image)
+            .context("Failed to open UEFI image for partition extraction")?;
+        let disk = gpt::GptConfig::new()
+            .open_from_device(Box::new(device))
+            .context("Failed to parse GPT header from UEFI image")?;
+
+        let partition = disk
+            .partitions()
+            .values()
+            .next()
+            .context("No partition found in UEFI disk image")?;
+
+        let start_bytes = partition.bytes_start(*disk.logical_block_size())?;
+        let len_bytes = partition.bytes_len(*disk.logical_block_size())?;
+
+        let mut src = std::fs::File::open(uefi_image)?;
+        src.seek(std::io::SeekFrom::Start(start_bytes))?;
+        let mut dest = std::fs::File::create(&efi_fat_img)?;
+        std::io::copy(&mut src.take(len_bytes), &mut dest)?;
+    }
+
+    // 3. Package into bootable ISO using xorriso
+    let xorriso_check = Command::new("which").arg("xorriso").output();
+    let has_xorriso = xorriso_check.map(|o| o.status.success()).unwrap_or(false);
+
+    if has_xorriso {
+        let mut xorriso = Command::new("xorriso");
+        xorriso
+            .arg("-as")
+            .arg("mkisofs")
+            .arg("-iso-level")
+            .arg("3")
+            .arg("-full-iso9660-filenames")
+            .arg("-volid")
+            .arg("RUSTOS")
+            .arg("-eltorito-alt-boot")
+            .arg("-e")
+            .arg("boot/efi.img")
+            .arg("-no-emul-boot")
+            .arg("-isohybrid-gpt-basdat")
+            .arg("-output")
+            .arg(iso_path)
+            .arg(&iso_root);
+
+        let status = xorriso.status().context("Failed to execute xorriso")?;
+        if status.success() {
+            println!(
+                "[+] Bootable ISO ready: {:?} ({} bytes)",
+                iso_path,
+                std::fs::metadata(iso_path)?.len()
+            );
+        } else {
+            eprintln!("[!] Warning: xorriso exited with status {}", status);
+        }
+    } else {
+        println!("[!] xorriso not found on host system; skipping .iso packaging.");
+    }
+
+    // Clean up temporary iso_root staging
+    let _ = std::fs::remove_dir_all(&iso_root);
     Ok(())
 }
 
