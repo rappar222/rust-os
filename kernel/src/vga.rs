@@ -156,13 +156,49 @@ impl ConsoleWriter {
         }
     }
 
-    pub fn clear_screen(&mut self) {
-        let bg = self.bg_color.to_rgb();
-        for y in 0..self.info.height {
-            for x in 0..self.info.width {
-                self.draw_pixel(x, y, bg);
+    pub fn fill_rect(&mut self, x: usize, y: usize, width: usize, height: usize, color: RgbColor) {
+        let max_x = core::cmp::min(x + width, self.info.width);
+        let max_y = core::cmp::min(y + height, self.info.height);
+        if max_x <= x || max_y <= y {
+            return;
+        }
+
+        let bpp = self.info.bytes_per_pixel;
+        let stride = self.info.stride;
+        let count = max_x - x;
+
+        if bpp == 4 {
+            let pixel_val: u32 = match self.info.pixel_format {
+                PixelFormat::Bgr => {
+                    (color.b as u32) | ((color.g as u32) << 8) | ((color.r as u32) << 16) | 0xFF000000
+                }
+                _ => {
+                    (color.r as u32) | ((color.g as u32) << 8) | ((color.b as u32) << 16) | 0xFF000000
+                }
+            };
+
+            for cy in y..max_y {
+                let row_start = (cy * stride + x) * 4;
+                if row_start + count * 4 <= self.buffer.len() {
+                    let ptr = unsafe { self.buffer.as_mut_ptr().add(row_start) as *mut u32 };
+                    let slice = unsafe { core::slice::from_raw_parts_mut(ptr, count) };
+                    slice.fill(pixel_val);
+                }
+            }
+        } else {
+            for cy in y..max_y {
+                for cx in x..max_x {
+                    self.draw_pixel(cx, cy, color);
+                }
             }
         }
+    }
+
+    pub fn clear_screen(&mut self) {
+        let bg = self.bg_color.to_rgb();
+        let w = self.info.width;
+        let h = self.info.height;
+        self.fill_rect(0, 0, w, h, bg);
         self.col = 0;
         self.row = 0;
         self.draw_cursor();
@@ -350,13 +386,7 @@ pub fn draw_pixel(x: usize, y: usize, color: RgbColor) {
 
 pub fn fill_rect(x: usize, y: usize, width: usize, height: usize, color: RgbColor) {
     if let Some(ref mut writer) = *WRITER.lock() {
-        let max_x = core::cmp::min(x + width, writer.info.width);
-        let max_y = core::cmp::min(y + height, writer.info.height);
-        for cy in y..max_y {
-            for cx in x..max_x {
-                writer.draw_pixel(cx, cy, color);
-            }
-        }
+        writer.fill_rect(x, y, width, height, color);
     }
 }
 
@@ -407,9 +437,14 @@ pub fn update_mouse_cursor(new_x: usize, new_y: usize) {
         let max_w = writer.info.width;
         let max_h = writer.info.height;
 
-        // 1. Restore previous cursor background pixels without redrawing whole screen
         let mut last_pos = LAST_CURSOR_POS.lock();
         if let Some((old_x, old_y)) = *last_pos {
+            // If cursor has not moved, do NOT touch video memory!
+            if old_x == new_x && old_y == new_y {
+                return;
+            }
+
+            // 1. Restore previous cursor background pixels without redrawing whole screen
             let back = CURSOR_BACK_BUFFER.lock();
             for cy in 0..18 {
                 let py = old_y + cy;

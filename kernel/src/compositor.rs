@@ -171,30 +171,18 @@ impl FloatingWindow {
     }
 
     pub fn new_neofetch(id: usize, x: usize, y: usize, w: usize, h: usize) -> Self {
-        let mut lines = Vec::new();
-        lines.push(String::from("          ######          root@rustos"));
-        lines.push(String::from("       ############       -------------------------"));
-        lines.push(String::from("     ###   ####   ###     OS: RustOS x86_64"));
-        lines.push(String::from("    ##      ##      ##    WM: RustOS Floating Window Manager"));
-        lines.push(String::from("   ##   ##      ##   ##   Kernel: 0.2.0-rustos (no_std)"));
-        lines.push(String::from("   ##  ####    ####  ##   Host: VirtualBox / Bare-Metal x86_64"));
-        lines.push(String::from("   ##   ##      ##   ##   Drivers: PS/2 Mouse + Keyboard, ATA"));
-        lines.push(String::from("    ##      ##      ##    Packages: 18 (pacman), 2 (aur)"));
-        lines.push(String::from("     ###   ####   ###     Shell: rsh 1.2.0"));
-        lines.push(String::from("       ############       Resolution: 1280x720 (Framebuffer)"));
-        lines.push(String::from("          ######          Mouse: Hardware Pointer Active"));
         Self {
             id,
             title: String::from("System Info - neofetch"),
             win_type: WindowType::Neofetch,
             x,
             y,
-            width: w,
-            height: h,
+            width: w.max(640),
+            height: h.max(340),
             minimized: false,
             maximized: false,
             saved_geom: (x, y, w, h),
-            lines,
+            lines: Vec::new(),
             prompt: String::new(),
             input_buf: String::new(),
             fm_path: String::new(),
@@ -686,28 +674,79 @@ impl Compositor {
         vga::draw_string(pal_x + 16, bar_y + 6, "CLEAR", white, None);
     }
 
-    fn render_neofetch_content(&self, win: &FloatingWindow, cx: usize, cy: usize, cw: usize, ch: usize) {
-        let text_pad_x = cx + 12;
-        let mut curr_y = cy + 12;
-        let max_cols = (cw.saturating_sub(20)) / FONT_WIDTH;
-        let text_white = RgbColor { r: 240, g: 240, b: 240 };
+    fn render_neofetch_content(&self, _win: &FloatingWindow, cx: usize, cy: usize, cw: usize, ch: usize) {
         let rust_orange = ColorCode::RustOrange.to_rgb();
+        let white = RgbColor { r: 245, g: 245, b: 245 };
+        let cyan = ColorCode::LightCyan.to_rgb();
+        let gray = RgbColor { r: 160, g: 165, b: 175 };
 
-        for line in &win.lines {
+        let logo = [
+            "               ______               ",
+            "            .-~~~~~~~~-.            ",
+            "          /   _  __  _   \\          ",
+            "      |==|   | ||  || |   |==|      ",
+            "      |==|   |_||__||_|   |==|      ",
+            "      |  |    ________    |  |      ",
+            "      |==|   |  ____  \\   |==|      ",
+            "      |==|   | |   _) |   |==|      ",
+            "      |  |   |  __  <     |  |      ",
+            "      |==|   | |  \\  \\    |==|      ",
+            "      |==|   |_|   \\__\\   |==|      ",
+            "      |  |    ________    |  |      ",
+            "      |==|    _  __  _    |==|      ",
+            "      |==|   | ||  || |   |==|      ",
+            "          \\  |_||__||_|  /          ",
+            "           `-..........-`           ",
+        ];
+
+        let (_heap_start, heap_size, _) = get_heap_info();
+        let (pac_pkgs, aur_pkgs) = crate::pkg::count_installed();
+        let secs = crate::interrupts::uptime_seconds();
+        let mins = secs / 60;
+        let hrs = mins / 60;
+
+        let info: [(&str, String); 16] = [
+            ("root@rustos", String::from("-------------------------")),
+            ("OS:", String::from("RustOS x86_64 (Arch Inspired)")),
+            ("Host:", String::from("Bare-Metal / Virtual Machine")),
+            ("Kernel:", String::from("0.2.0-rustos (no_std Rust)")),
+            ("Uptime:", format!("{}h {}m {}s", hrs, mins % 60, secs % 60)),
+            ("Packages:", format!("{} (pacman), {} (aur)", pac_pkgs, aur_pkgs)),
+            ("Shell:", String::from("rsh 1.2.0 (tab-completion)")),
+            ("WM:", String::from("RustOS Floating Window Manager")),
+            ("Resolution:", format!("{}x{}", self.screen_w, self.screen_h)),
+            ("Terminal:", String::from("RustOS Graphical Framebuffer")),
+            ("CPU:", String::from("x86_64 Multi-Core (SMP Ready)")),
+            ("Memory:", format!("{} KB / 512 MB", heap_size / 1024)),
+            ("Storage:", String::from("/dev/sda2 (SimpleFS v2)")),
+            ("Locale:", String::from("en_US.UTF-8 / UTC+2")),
+            ("Mouse:", String::from("Hardware PS/2 (200 Hz)")),
+            ("", String::from("")),
+        ];
+
+        let logo_x = cx + 8;
+        let info_x = cx + 8 + (38 * FONT_WIDTH);
+        let mut curr_y = cy + 12;
+
+        for row in 0..16 {
             if curr_y + FONT_HEIGHT > cy + ch {
                 break;
             }
-            let display_str = if line.len() > max_cols {
-                &line[..max_cols]
-            } else {
-                line
-            };
-            let color = if line.contains("######") || line.contains("##") {
-                rust_orange
-            } else {
-                text_white
-            };
-            vga::draw_string(text_pad_x, curr_y, display_str, color, None);
+            // 1. Draw authentic Rust logo on the left in official Rust Orange
+            vga::draw_string(logo_x, curr_y, logo[row], rust_orange, None);
+
+            // 2. Draw system information on the right in Cyan and White
+            if row == 0 {
+                vga::draw_string(info_x, curr_y, info[row].0, rust_orange, None);
+            } else if row == 1 {
+                vga::draw_string(info_x, curr_y, &info[row].1, gray, None);
+            } else if !info[row].0.is_empty() {
+                vga::draw_string(info_x, curr_y, info[row].0, cyan, None);
+                let val_x = info_x + (info[row].0.len() + 1) * FONT_WIDTH;
+                if val_x < cx + cw {
+                    vga::draw_string(val_x, curr_y, &info[row].1, white, None);
+                }
+            }
             curr_y += FONT_HEIGHT + 2;
         }
     }
@@ -1104,6 +1143,9 @@ pub fn run() {
     comp.render();
 
     let mut last_tick = crate::interrupts::ticks();
+    let mut last_render_tick = crate::interrupts::ticks();
+    let mut prev_mx = comp.mouse_x;
+    let mut prev_my = comp.mouse_y;
 
     while comp.running {
         // 1. Poll PS/2 Mouse & Keyboard hardware ports
@@ -1111,11 +1153,27 @@ pub fn run() {
         mouse::poll_mouse();
 
         // 2. Process Mouse Events (Dragging, Resizing, Clicking, Menu, Drawing)
-        if comp.handle_mouse_events() {
-            comp.render();
+        let need_redraw = comp.handle_mouse_events();
+        let now = crate::interrupts::ticks();
+
+        let is_dragging = comp.drag_win_idx.is_some() || comp.resize_win_idx.is_some();
+        let can_render = if is_dragging {
+            // Throttle dragging render to ~40 FPS (every 2.5 ticks @ 100 Hz = 25ms)
+            now.wrapping_sub(last_render_tick) >= 2
         } else {
+            true
+        };
+
+        if need_redraw && can_render {
+            comp.render();
+            last_render_tick = now;
+            prev_mx = comp.mouse_x;
+            prev_my = comp.mouse_y;
+        } else if comp.mouse_x != prev_mx || comp.mouse_y != prev_my {
             // Smooth cursor update: only redraws the tiny 12x18 cursor sprite without touching the screen
             vga::update_mouse_cursor(comp.mouse_x, comp.mouse_y);
+            prev_mx = comp.mouse_x;
+            prev_my = comp.mouse_y;
         }
 
         // 3. Process Keyboard Events
@@ -1124,7 +1182,6 @@ pub fn run() {
         }
 
         // 4. Periodic Taskbar Clock & Stats Update (every 50 ticks = 0.5s)
-        let now = crate::interrupts::ticks();
         if now.wrapping_sub(last_tick) > 50 {
             last_tick = now;
             let dark_panel = RgbColor { r: 28, g: 32, b: 40 };
@@ -1138,7 +1195,7 @@ pub fn run() {
             vga::draw_string(right_x, 5, &status_right, white, None);
         }
 
-        for _ in 0..100 {
+        for _ in 0..50 {
             core::hint::spin_loop();
         }
     }

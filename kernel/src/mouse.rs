@@ -134,25 +134,16 @@ pub fn init(width: usize, height: usize) {
         mouse_write(0xF6);
         let _ = mouse_read(); // ACK (0xFA)
 
-        // 4. Set resolution to 8 counts/mm (Command 0xE8, value 0x03)
-        mouse_write(0xE8);
-        let _ = mouse_read();
-        mouse_write(0x03);
-        let _ = mouse_read();
-
-        // 5. Set sample rate to 200 Hz (Command 0xF3, value 200)
-        mouse_write(0xF3);
-        let _ = mouse_read();
-        mouse_write(200);
-        let _ = mouse_read();
-
-        // 6. Set scaling 1:1 (Command 0xE6)
-        mouse_write(0xE6);
-        let _ = mouse_read();
-
-        // 7. Enable packet streaming
+        // 4. Enable packet streaming
         mouse_write(0xF4);
         let _ = mouse_read(); // ACK (0xFA)
+
+        // Drain any lingering bytes in buffer
+        for _ in 0..10 {
+            if mouse_wait_read() {
+                let _ = Port::<u8>::new(0x60).read();
+            }
+        }
     }
 }
 
@@ -199,12 +190,12 @@ pub fn handle_mouse_byte(byte: u8) {
             // Mouse sensitivity multiplier and dynamic acceleration for high-res screens
             let abs_dx = dx.abs();
             let abs_dy = dy.abs();
-            let speed_mult = if abs_dx > 12 || abs_dy > 12 {
-                5
-            } else if abs_dx > 4 || abs_dy > 4 {
-                3
+            let speed_mult = if abs_dx > 10 || abs_dy > 10 {
+                6
+            } else if abs_dx > 3 || abs_dy > 3 {
+                4
             } else {
-                2
+                3
             };
 
             dx *= speed_mult;

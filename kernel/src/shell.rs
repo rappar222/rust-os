@@ -712,19 +712,9 @@ fn execute_command(state: &mut ShellState, cmd_line: &str) {
             return;
         }
         "wm" | "startx" | "staartx" | "desktop" | "desktopp" | "compositor" => {
-            if !crate::compositor::is_installed() {
-                vga::set_colors(ColorCode::Yellow, ColorCode::Black);
-                println!(":: RustOS Floating Window Compositor is not installed.");
-                println!(":: The system is currently running in live environment mode.");
-                vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
-                println!(":: Please run 'rustos-install' to install RustOS to disk");
-                println!(":: and enable the graphical floating compositor desktop environment.");
-                vga::set_colors(ColorCode::White, ColorCode::Black);
-            } else {
-                crate::compositor::run();
-                print_prompt(state);
-                return;
-            }
+            crate::compositor::run();
+            print_prompt(state);
+            return;
         }
         "pacman" => crate::pkg::cmd_pacman(&args),
         "yay" => crate::pkg::cmd_yay_or_paru("yay", &args),
