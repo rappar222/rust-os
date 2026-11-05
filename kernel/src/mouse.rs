@@ -236,12 +236,19 @@ pub fn handle_mouse_byte(byte: u8) {
 
 pub fn poll_mouse() {
     let mut status_port: Port<u8> = Port::new(0x64);
-    let status = unsafe { status_port.read() };
-    // Bit 0 = data available, Bit 5 = mouse data (auxiliary device)
-    if (status & 0x01) != 0 && (status & 0x20) != 0 {
-        let mut data_port: Port<u8> = Port::new(0x60);
-        let byte = unsafe { data_port.read() };
-        handle_mouse_byte(byte);
+    for _ in 0..16 {
+        let status = unsafe { status_port.read() };
+        // Bit 0 = data available, Bit 5 = mouse data (auxiliary device)
+        if (status & 0x01) == 0 {
+            break;
+        }
+        if (status & 0x20) != 0 {
+            let mut data_port: Port<u8> = Port::new(0x60);
+            let byte = unsafe { data_port.read() };
+            handle_mouse_byte(byte);
+        } else {
+            break; // Let keyboard handler read keyboard bytes
+        }
     }
 }
 

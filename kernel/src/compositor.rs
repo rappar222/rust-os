@@ -412,7 +412,10 @@ impl Compositor {
         let legend = "Mouse: Click to focus/drag/resize | [RustOS] Menu | [Alt+Tab] Switch | [Alt+N] Terminal | [Esc] Exit";
         vga::draw_string(14, btm_y + 3, legend, rust_orange, None);
 
-        // 6. Draw Hardware Mouse Cursor Sprite on Top of Everything
+        // 6. Atomically Swap Back-Buffer to Screen Framebuffer
+        vga::swap_buffers();
+
+        // 7. Draw Hardware Mouse Cursor Sprite on Top of Hardware Screen
         vga::draw_mouse_cursor(self.mouse_x, self.mouse_y);
     }
 
@@ -1138,12 +1141,11 @@ fn execute_terminal_cmd(cmd_line: &str) -> Vec<String> {
 }
 
 pub fn run() {
-    vga::clear_screen();
+    vga::enable_double_buffer();
     let mut comp = Compositor::new();
     comp.render();
 
     let mut last_tick = crate::interrupts::ticks();
-    let mut last_render_tick = crate::interrupts::ticks();
     let mut prev_mx = comp.mouse_x;
     let mut prev_my = comp.mouse_y;
 
@@ -1154,19 +1156,9 @@ pub fn run() {
 
         // 2. Process Mouse Events (Dragging, Resizing, Clicking, Menu, Drawing)
         let need_redraw = comp.handle_mouse_events();
-        let now = crate::interrupts::ticks();
 
-        let is_dragging = comp.drag_win_idx.is_some() || comp.resize_win_idx.is_some();
-        let can_render = if is_dragging {
-            // Throttle dragging render to ~40 FPS (every 2.5 ticks @ 100 Hz = 25ms)
-            now.wrapping_sub(last_render_tick) >= 2
-        } else {
-            true
-        };
-
-        if need_redraw && can_render {
+        if need_redraw {
             comp.render();
-            last_render_tick = now;
             prev_mx = comp.mouse_x;
             prev_my = comp.mouse_y;
         } else if comp.mouse_x != prev_mx || comp.mouse_y != prev_my {
@@ -1182,6 +1174,7 @@ pub fn run() {
         }
 
         // 4. Periodic Taskbar Clock & Stats Update (every 50 ticks = 0.5s)
+        let now = crate::interrupts::ticks();
         if now.wrapping_sub(last_tick) > 50 {
             last_tick = now;
             let dark_panel = RgbColor { r: 28, g: 32, b: 40 };
@@ -1193,14 +1186,17 @@ pub fn run() {
             let right_x = comp.screen_w.saturating_sub(status_right.len() * FONT_WIDTH + 14);
             vga::fill_rect(right_x, 2, status_right.len() * FONT_WIDTH + 14, 22, dark_panel);
             vga::draw_string(right_x, 5, &status_right, white, None);
+            vga::swap_buffers();
+            vga::draw_mouse_cursor(comp.mouse_x, comp.mouse_y);
         }
 
-        for _ in 0..50 {
+        for _ in 0..10 {
             core::hint::spin_loop();
         }
     }
 
     // Restore VGA console screen when leaving compositor
+    vga::disable_double_buffer();
     vga::clear_screen();
     vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
     crate::println!(":: Exited RustOS Window Manager. Returned to console shell.");

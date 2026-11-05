@@ -1,5 +1,6 @@
 use core::fmt::{self, Write};
 use spin::Mutex;
+use alloc::vec::Vec;
 use bootloader_api::info::{FrameBuffer, FrameBufferInfo, PixelFormat};
 use crate::font::{FONT_DATA, FONT_HEIGHT, FONT_WIDTH};
 
@@ -58,6 +59,8 @@ impl ColorCode {
 
 pub struct ConsoleWriter {
     buffer: &'static mut [u8],
+    back_buffer: Option<Vec<u8>>,
+    double_buffering: bool,
     info: FrameBufferInfo,
     col: usize,
     row: usize,
@@ -76,6 +79,8 @@ impl ConsoleWriter {
 
         let mut writer = Self {
             buffer,
+            back_buffer: None,
+            double_buffering: false,
             info,
             col: 0,
             row: 0,
@@ -86,6 +91,30 @@ impl ConsoleWriter {
         };
         writer.clear_screen();
         writer
+    }
+
+    pub fn enable_double_buffer(&mut self) {
+        if self.back_buffer.is_none() {
+            let len = self.buffer.len();
+            let mut v = Vec::with_capacity(len);
+            v.resize(len, 0);
+            v.copy_from_slice(self.buffer);
+            self.back_buffer = Some(v);
+        }
+        self.double_buffering = true;
+    }
+
+    pub fn disable_double_buffer(&mut self) {
+        if self.double_buffering {
+            self.swap_buffers();
+        }
+        self.double_buffering = false;
+    }
+
+    pub fn swap_buffers(&mut self) {
+        if let Some(ref back) = self.back_buffer {
+            self.buffer.copy_from_slice(back);
+        }
     }
 
     pub fn set_colors(&mut self, fg: ColorCode, bg: ColorCode) {
@@ -102,6 +131,52 @@ impl ConsoleWriter {
     }
 
     pub fn draw_pixel(&mut self, x: usize, y: usize, color: RgbColor) {
+        if x >= self.info.width || y >= self.info.height {
+            return;
+        }
+
+        let pixel_offset = (y * self.info.stride + x) * self.info.bytes_per_pixel;
+        let bpp = self.info.bytes_per_pixel;
+        let format = self.info.pixel_format;
+
+        let target: &mut [u8] = if self.double_buffering {
+            if let Some(ref mut bb) = self.back_buffer {
+                bb.as_mut_slice()
+            } else {
+                self.buffer
+            }
+        } else {
+            self.buffer
+        };
+
+        if pixel_offset + bpp > target.len() {
+            return;
+        }
+
+        match format {
+            PixelFormat::Rgb => {
+                target[pixel_offset] = color.r;
+                target[pixel_offset + 1] = color.g;
+                target[pixel_offset + 2] = color.b;
+            }
+            PixelFormat::Bgr => {
+                target[pixel_offset] = color.b;
+                target[pixel_offset + 1] = color.g;
+                target[pixel_offset + 2] = color.r;
+            }
+            PixelFormat::U8 => {
+                let gray = ((color.r as u16 + color.g as u16 + color.b as u16) / 3) as u8;
+                target[pixel_offset] = gray;
+            }
+            _ => {
+                target[pixel_offset] = color.r;
+                target[pixel_offset + 1] = color.g;
+                target[pixel_offset + 2] = color.b;
+            }
+        }
+    }
+
+    pub fn draw_pixel_to_front(&mut self, x: usize, y: usize, color: RgbColor) {
         if x >= self.info.width || y >= self.info.height {
             return;
         }
@@ -139,19 +214,28 @@ impl ConsoleWriter {
             return RgbColor { r: 0, g: 0, b: 0 };
         }
         let pixel_offset = (y * self.info.stride + x) * self.info.bytes_per_pixel;
-        if pixel_offset + 3 > self.buffer.len() {
+        let target: &[u8] = if self.double_buffering {
+            if let Some(ref bb) = self.back_buffer {
+                bb.as_slice()
+            } else {
+                self.buffer
+            }
+        } else {
+            self.buffer
+        };
+        if pixel_offset + 3 > target.len() {
             return RgbColor { r: 0, g: 0, b: 0 };
         }
         match self.info.pixel_format {
             PixelFormat::Bgr => RgbColor {
-                b: self.buffer[pixel_offset],
-                g: self.buffer[pixel_offset + 1],
-                r: self.buffer[pixel_offset + 2],
+                b: target[pixel_offset],
+                g: target[pixel_offset + 1],
+                r: target[pixel_offset + 2],
             },
             _ => RgbColor {
-                r: self.buffer[pixel_offset],
-                g: self.buffer[pixel_offset + 1],
-                b: self.buffer[pixel_offset + 2],
+                r: target[pixel_offset],
+                g: target[pixel_offset + 1],
+                b: target[pixel_offset + 2],
             },
         }
     }
@@ -166,9 +250,20 @@ impl ConsoleWriter {
         let bpp = self.info.bytes_per_pixel;
         let stride = self.info.stride;
         let count = max_x - x;
+        let format = self.info.pixel_format;
+
+        let target: &mut [u8] = if self.double_buffering {
+            if let Some(ref mut bb) = self.back_buffer {
+                bb.as_mut_slice()
+            } else {
+                self.buffer
+            }
+        } else {
+            self.buffer
+        };
 
         if bpp == 4 {
-            let pixel_val: u32 = match self.info.pixel_format {
+            let pixel_val: u32 = match format {
                 PixelFormat::Bgr => {
                     (color.b as u32) | ((color.g as u32) << 8) | ((color.r as u32) << 16) | 0xFF000000
                 }
@@ -179,16 +274,119 @@ impl ConsoleWriter {
 
             for cy in y..max_y {
                 let row_start = (cy * stride + x) * 4;
-                if row_start + count * 4 <= self.buffer.len() {
-                    let ptr = unsafe { self.buffer.as_mut_ptr().add(row_start) as *mut u32 };
+                if row_start + count * 4 <= target.len() {
+                    let ptr = unsafe { target.as_mut_ptr().add(row_start) as *mut u32 };
                     let slice = unsafe { core::slice::from_raw_parts_mut(ptr, count) };
                     slice.fill(pixel_val);
+                }
+            }
+        } else if bpp == 3 {
+            let (b0, b1, b2) = match format {
+                PixelFormat::Bgr => (color.b, color.g, color.r),
+                _ => (color.r, color.g, color.b),
+            };
+
+            for cy in y..max_y {
+                let row_start = (cy * stride + x) * 3;
+                let row_end = row_start + count * 3;
+                if row_end <= target.len() {
+                    let row = &mut target[row_start..row_end];
+                    for chunk in row.chunks_exact_mut(3) {
+                        chunk[0] = b0;
+                        chunk[1] = b1;
+                        chunk[2] = b2;
+                    }
                 }
             }
         } else {
             for cy in y..max_y {
                 for cx in x..max_x {
                     self.draw_pixel(cx, cy, color);
+                }
+            }
+        }
+    }
+
+    pub fn draw_char_direct(&mut self, px: usize, py: usize, c: char, fg: RgbColor, bg: Option<RgbColor>) {
+        if px + FONT_WIDTH > self.info.width || py + FONT_HEIGHT > self.info.height {
+            return;
+        }
+
+        let glyph = FONT_DATA[(c as usize) & 0xFF];
+        let stride = self.info.stride;
+        let bpp = self.info.bytes_per_pixel;
+        let format = self.info.pixel_format;
+
+        let target: &mut [u8] = if self.double_buffering {
+            if let Some(ref mut bb) = self.back_buffer {
+                bb.as_mut_slice()
+            } else {
+                self.buffer
+            }
+        } else {
+            self.buffer
+        };
+
+        if bpp == 4 {
+            let fg_val: u32 = match format {
+                PixelFormat::Bgr => (fg.b as u32) | ((fg.g as u32) << 8) | ((fg.r as u32) << 16) | 0xFF000000,
+                _ => (fg.r as u32) | ((fg.g as u32) << 8) | ((fg.b as u32) << 16) | 0xFF000000,
+            };
+            let bg_val: Option<u32> = bg.map(|b| match format {
+                PixelFormat::Bgr => (b.b as u32) | ((b.g as u32) << 8) | ((b.r as u32) << 16) | 0xFF000000,
+                _ => (b.r as u32) | ((b.g as u32) << 8) | ((b.b as u32) << 16) | 0xFF000000,
+            });
+
+            for (dy, &row_bits) in glyph.iter().enumerate() {
+                let row_offset = (py + dy) * stride + px;
+                let row_bytes = row_offset * 4;
+                if row_bytes + FONT_WIDTH * 4 <= target.len() {
+                    let ptr = unsafe { target.as_mut_ptr().add(row_bytes) as *mut u32 };
+                    for dx in 0..FONT_WIDTH {
+                        if (row_bits & (0x80 >> dx)) != 0 {
+                            unsafe { *ptr.add(dx) = fg_val; }
+                        } else if let Some(bg_c) = bg_val {
+                            unsafe { *ptr.add(dx) = bg_c; }
+                        }
+                    }
+                }
+            }
+        } else if bpp == 3 {
+            let (fg_b0, fg_b1, fg_b2) = match format {
+                PixelFormat::Bgr => (fg.b, fg.g, fg.r),
+                _ => (fg.r, fg.g, fg.b),
+            };
+            let bg_bytes: Option<(u8, u8, u8)> = bg.map(|b| match format {
+                PixelFormat::Bgr => (b.b, b.g, b.r),
+                _ => (b.r, b.g, b.b),
+            });
+
+            for (dy, &row_bits) in glyph.iter().enumerate() {
+                let row_start = ((py + dy) * stride + px) * 3;
+                for dx in 0..FONT_WIDTH {
+                    let pixel_start = row_start + dx * 3;
+                    if pixel_start + 3 <= target.len() {
+                        if (row_bits & (0x80 >> dx)) != 0 {
+                            target[pixel_start] = fg_b0;
+                            target[pixel_start + 1] = fg_b1;
+                            target[pixel_start + 2] = fg_b2;
+                        } else if let Some((bg0, bg1, bg2)) = bg_bytes {
+                            target[pixel_start] = bg0;
+                            target[pixel_start + 1] = bg1;
+                            target[pixel_start + 2] = bg2;
+                        }
+                    }
+                }
+            }
+        } else {
+            for (dy, &row_bits) in glyph.iter().enumerate() {
+                for dx in 0..FONT_WIDTH {
+                    let is_fg = (row_bits & (0x80 >> dx)) != 0;
+                    if is_fg {
+                        self.draw_pixel(px + dx, py + dy, fg);
+                    } else if let Some(bg_c) = bg {
+                        self.draw_pixel(px + dx, py + dy, bg_c);
+                    }
                 }
             }
         }
@@ -425,6 +623,24 @@ pub fn draw_rect_outline(x: usize, y: usize, width: usize, height: usize, border
     }
 }
 
+pub fn enable_double_buffer() {
+    if let Some(ref mut writer) = *WRITER.lock() {
+        writer.enable_double_buffer();
+    }
+}
+
+pub fn disable_double_buffer() {
+    if let Some(ref mut writer) = *WRITER.lock() {
+        writer.disable_double_buffer();
+    }
+}
+
+pub fn swap_buffers() {
+    if let Some(ref mut writer) = *WRITER.lock() {
+        writer.swap_buffers();
+    }
+}
+
 static CURSOR_BACK_BUFFER: Mutex<[RgbColor; 12 * 18]> = Mutex::new([RgbColor { r: 0, g: 0, b: 0 }; 12 * 18]);
 static LAST_CURSOR_POS: Mutex<Option<(usize, usize)>> = Mutex::new(None);
 
@@ -444,22 +660,40 @@ pub fn update_mouse_cursor(new_x: usize, new_y: usize) {
                 return;
             }
 
-            // 1. Restore previous cursor background pixels without redrawing whole screen
-            let back = CURSOR_BACK_BUFFER.lock();
-            for cy in 0..18 {
-                let py = old_y + cy;
-                if py >= max_h { break; }
-                for cx in 0..12 {
-                    let px = old_x + cx;
-                    if px >= max_w { break; }
-                    let saved_color = back[cy * 12 + cx];
-                    writer.draw_pixel(px, py, saved_color);
+            // 1. Restore previous cursor background pixels
+            if writer.double_buffering && writer.back_buffer.is_some() {
+                let back = writer.back_buffer.as_ref().unwrap();
+                let stride = writer.info.stride;
+                let bpp = writer.info.bytes_per_pixel;
+                let vga_buf = &mut writer.buffer;
+
+                for cy in 0..18 {
+                    let py = old_y + cy;
+                    if py >= max_h { break; }
+                    let copy_w = 12.min(max_w.saturating_sub(old_x));
+                    let offset = (py * stride + old_x) * bpp;
+                    let len = copy_w * bpp;
+                    if offset + len <= vga_buf.len() && offset + len <= back.len() {
+                        vga_buf[offset..offset + len].copy_from_slice(&back[offset..offset + len]);
+                    }
+                }
+            } else {
+                let back = CURSOR_BACK_BUFFER.lock();
+                for cy in 0..18 {
+                    let py = old_y + cy;
+                    if py >= max_h { break; }
+                    for cx in 0..12 {
+                        let px = old_x + cx;
+                        if px >= max_w { break; }
+                        let saved_color = back[cy * 12 + cx];
+                        writer.draw_pixel_to_front(px, py, saved_color);
+                    }
                 }
             }
         }
 
-        // 2. Save background pixels at new position
-        {
+        // 2. Save background pixels at new position (for non-double buffered mode)
+        if !writer.double_buffering || writer.back_buffer.is_none() {
             let mut back = CURSOR_BACK_BUFFER.lock();
             for cy in 0..18 {
                 let py = new_y + cy;
@@ -473,7 +707,7 @@ pub fn update_mouse_cursor(new_x: usize, new_y: usize) {
         }
         *last_pos = Some((new_x, new_y));
 
-        // 3. Draw mouse cursor sprite on top
+        // 3. Draw mouse cursor sprite directly to hardware screen
         for (cy, row) in crate::mouse::CURSOR_SPRITE.iter().enumerate() {
             let py = new_y + cy;
             if py >= max_h {
@@ -485,9 +719,9 @@ pub fn update_mouse_cursor(new_x: usize, new_y: usize) {
                     break;
                 }
                 if val == 1 {
-                    writer.draw_pixel(px, py, RgbColor { r: 0, g: 0, b: 0 });
+                    writer.draw_pixel_to_front(px, py, RgbColor { r: 0, g: 0, b: 0 });
                 } else if val == 2 {
-                    writer.draw_pixel(px, py, RgbColor { r: 255, g: 255, b: 255 });
+                    writer.draw_pixel_to_front(px, py, RgbColor { r: 255, g: 255, b: 255 });
                 }
             }
         }
@@ -495,24 +729,47 @@ pub fn update_mouse_cursor(new_x: usize, new_y: usize) {
 }
 
 pub fn draw_mouse_cursor(x: usize, y: usize) {
-    update_mouse_cursor(x, y);
+    if let Some(ref mut writer) = *WRITER.lock() {
+        let max_w = writer.info.width;
+        let max_h = writer.info.height;
+
+        // In non-double buffered mode, save background
+        if !writer.double_buffering || writer.back_buffer.is_none() {
+            let mut back = CURSOR_BACK_BUFFER.lock();
+            for cy in 0..18 {
+                let py = y + cy;
+                if py >= max_h { break; }
+                for cx in 0..12 {
+                    let px = x + cx;
+                    if px >= max_w { break; }
+                    back[cy * 12 + cx] = writer.read_pixel(px, py);
+                }
+            }
+        }
+        *LAST_CURSOR_POS.lock() = Some((x, y));
+
+        // Draw mouse cursor sprite directly to hardware screen
+        for (cy, row) in crate::mouse::CURSOR_SPRITE.iter().enumerate() {
+            let py = y + cy;
+            if py >= max_h { break; }
+            for (cx, &val) in row.iter().enumerate() {
+                let px = x + cx;
+                if px >= max_w { break; }
+                if val == 1 {
+                    writer.draw_pixel_to_front(px, py, RgbColor { r: 0, g: 0, b: 0 });
+                } else if val == 2 {
+                    writer.draw_pixel_to_front(px, py, RgbColor { r: 255, g: 255, b: 255 });
+                }
+            }
+        }
+    }
 }
 
 pub fn draw_string(px: usize, py: usize, text: &str, fg: RgbColor, bg: Option<RgbColor>) {
     if let Some(ref mut writer) = *WRITER.lock() {
         let mut curr_x = px;
         for c in text.chars() {
-            let glyph = FONT_DATA[(c as usize) & 0xFF];
-            for (dy, &row_bits) in glyph.iter().enumerate() {
-                for dx in 0..FONT_WIDTH {
-                    let is_fg = (row_bits & (0x80 >> dx)) != 0;
-                    if is_fg {
-                        writer.draw_pixel(curr_x + dx, py + dy, fg);
-                    } else if let Some(bg_color) = bg {
-                        writer.draw_pixel(curr_x + dx, py + dy, bg_color);
-                    }
-                }
-            }
+            writer.draw_char_direct(curr_x, py, c, fg, bg);
             curr_x += FONT_WIDTH;
         }
     }

@@ -35,7 +35,7 @@ pub fn init_heap_from_boot_info(
     regions: &'static mut MemoryRegions,
     phys_offset: u64,
 ) -> Result<(usize, usize), &'static str> {
-    const HEAP_SIZE: usize = 4 * 1024 * 1024; // 4 MiB heap
+    const HEAP_SIZE: usize = 32 * 1024 * 1024; // 32 MiB heap
 
     // Find the largest usable memory region
     let mut best_region_idx = None;
