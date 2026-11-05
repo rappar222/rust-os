@@ -19,7 +19,7 @@ pub const ALL_COMMANDS_LIST: &[&str] = &[
     "pacman", "yay", "paru", "makepkg", "pacstrap", "arch-chroot", "genfstab", "install", "rustos-install", "archinstall",
     "wm", "startx", "desktop", "compositor",
     "neofetch", "fastfetch", "hyfetch", "pfetch", "onefetch",
-    "uname", "arch", "whoami", "id", "groups", "users", "who", "w", "hostname", "hostnamectl",
+    "uname", "arch", "whoami", "id", "groups", "users", "who", "w", "hostname", "hostnamectl", "passwd",
     "date", "timedatectl", "cal", "uptime", "lscpu", "lspci", "lsusb", "lsblk", "lsmod", "modprobe", "insmod", "rmmod",
     "free", "df", "du", "mount", "umount", "fdisk", "parted", "mkfs", "fsck", "sync",
     "ps", "pstree", "top", "htop", "btop", "kill", "killall", "pkill", "nice", "renice", "sleep",
@@ -748,6 +748,7 @@ fn execute_command(state: &mut ShellState, cmd_line: &str) {
             }
         }
         "hostnamectl" => cmd_hostnamectl(state, &args),
+        "passwd" => cmd_passwd(&args),
         "date" => cmd_date(),
         "timedatectl" => cmd_timedatectl(&args),
         "uptime" => cmd_uptime(),
@@ -1385,6 +1386,61 @@ fn cmd_uname(args: &[&str]) {
     } else {
         println!("Linux");
     }
+}
+
+fn read_masked_shell(prompt_text: &str) -> String {
+    print!("{}", prompt_text);
+    let mut input = String::new();
+    loop {
+        let ch = keyboard::read_char();
+        if ch == '\n' || ch == '\r' {
+            println!();
+            break;
+        } else if ch == '\x08' {
+            if !input.is_empty() {
+                input.pop();
+                vga::backspace();
+            }
+        } else if ch >= ' ' && ch <= '~' {
+            input.push(ch);
+            print!("*");
+        }
+    }
+    String::from(input.trim())
+}
+
+fn cmd_passwd(args: &[&str]) {
+    let target_user = if args.len() > 1 { args[1] } else { "root" };
+    println!("Changing password for {}.", target_user);
+
+    let p1 = read_masked_shell("New password: ");
+    if p1.is_empty() {
+        println!("passwd: password unchanged");
+        return;
+    }
+
+    let p2 = read_masked_shell("Retype new password: ");
+    if p1 != p2 {
+        println!("passwd: passwords do not match. Password unchanged.");
+        return;
+    }
+
+    let shadow_path = "/etc/shadow";
+    let entry = format!("{}:$6$salt${}:19000:0:99999:7:::\n", target_user, p1);
+    let mut new_shadow = String::new();
+    if let Ok(content) = crate::fs::read_file(shadow_path) {
+        if let Ok(text) = core::str::from_utf8(&content) {
+            for line in text.lines() {
+                if !line.starts_with(&format!("{}:", target_user)) && !line.is_empty() {
+                    new_shadow.push_str(line);
+                    new_shadow.push('\n');
+                }
+            }
+        }
+    }
+    new_shadow.push_str(&entry);
+    let _ = crate::fs::write_file(shadow_path, new_shadow.as_bytes());
+    println!("passwd: password updated successfully for {}", target_user);
 }
 
 fn cmd_hostnamectl(state: &mut ShellState, args: &[&str]) {

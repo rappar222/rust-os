@@ -134,6 +134,28 @@ impl ConsoleWriter {
         }
     }
 
+    pub fn read_pixel(&self, x: usize, y: usize) -> RgbColor {
+        if x >= self.info.width || y >= self.info.height {
+            return RgbColor { r: 0, g: 0, b: 0 };
+        }
+        let pixel_offset = (y * self.info.stride + x) * self.info.bytes_per_pixel;
+        if pixel_offset + 3 > self.buffer.len() {
+            return RgbColor { r: 0, g: 0, b: 0 };
+        }
+        match self.info.pixel_format {
+            PixelFormat::Bgr => RgbColor {
+                b: self.buffer[pixel_offset],
+                g: self.buffer[pixel_offset + 1],
+                r: self.buffer[pixel_offset + 2],
+            },
+            _ => RgbColor {
+                r: self.buffer[pixel_offset],
+                g: self.buffer[pixel_offset + 1],
+                b: self.buffer[pixel_offset + 2],
+            },
+        }
+    }
+
     pub fn clear_screen(&mut self) {
         let bg = self.bg_color.to_rgb();
         for y in 0..self.info.height {
@@ -373,17 +395,57 @@ pub fn draw_rect_outline(x: usize, y: usize, width: usize, height: usize, border
     }
 }
 
-pub fn draw_mouse_cursor(x: usize, y: usize) {
+static CURSOR_BACK_BUFFER: Mutex<[RgbColor; 12 * 18]> = Mutex::new([RgbColor { r: 0, g: 0, b: 0 }; 12 * 18]);
+static LAST_CURSOR_POS: Mutex<Option<(usize, usize)>> = Mutex::new(None);
+
+pub fn reset_mouse_cursor() {
+    *LAST_CURSOR_POS.lock() = None;
+}
+
+pub fn update_mouse_cursor(new_x: usize, new_y: usize) {
     if let Some(ref mut writer) = *WRITER.lock() {
         let max_w = writer.info.width;
         let max_h = writer.info.height;
+
+        // 1. Restore previous cursor background pixels without redrawing whole screen
+        let mut last_pos = LAST_CURSOR_POS.lock();
+        if let Some((old_x, old_y)) = *last_pos {
+            let back = CURSOR_BACK_BUFFER.lock();
+            for cy in 0..18 {
+                let py = old_y + cy;
+                if py >= max_h { break; }
+                for cx in 0..12 {
+                    let px = old_x + cx;
+                    if px >= max_w { break; }
+                    let saved_color = back[cy * 12 + cx];
+                    writer.draw_pixel(px, py, saved_color);
+                }
+            }
+        }
+
+        // 2. Save background pixels at new position
+        {
+            let mut back = CURSOR_BACK_BUFFER.lock();
+            for cy in 0..18 {
+                let py = new_y + cy;
+                if py >= max_h { break; }
+                for cx in 0..12 {
+                    let px = new_x + cx;
+                    if px >= max_w { break; }
+                    back[cy * 12 + cx] = writer.read_pixel(px, py);
+                }
+            }
+        }
+        *last_pos = Some((new_x, new_y));
+
+        // 3. Draw mouse cursor sprite on top
         for (cy, row) in crate::mouse::CURSOR_SPRITE.iter().enumerate() {
-            let py = y + cy;
+            let py = new_y + cy;
             if py >= max_h {
                 break;
             }
             for (cx, &val) in row.iter().enumerate() {
-                let px = x + cx;
+                let px = new_x + cx;
                 if px >= max_w {
                     break;
                 }
@@ -395,6 +457,10 @@ pub fn draw_mouse_cursor(x: usize, y: usize) {
             }
         }
     }
+}
+
+pub fn draw_mouse_cursor(x: usize, y: usize) {
+    update_mouse_cursor(x, y);
 }
 
 pub fn draw_string(px: usize, py: usize, text: &str, fg: RgbColor, bg: Option<RgbColor>) {

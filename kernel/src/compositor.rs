@@ -337,6 +337,8 @@ impl Compositor {
     }
 
     pub fn render(&mut self) {
+        vga::reset_mouse_cursor();
+
         let bg_color = RgbColor { r: 18, g: 20, b: 26 };
         let rust_orange = ColorCode::RustOrange.to_rgb();
         let dark_panel = RgbColor { r: 28, g: 32, b: 40 };
@@ -711,11 +713,11 @@ impl Compositor {
     }
 
     pub fn handle_mouse_events(&mut self) -> bool {
-        let (mx, my, left_held, clicked, released, moved) = mouse::get_mouse_event();
+        let (mx, my, left_held, clicked, released, _moved) = mouse::get_mouse_event();
         self.mouse_x = mx;
         self.mouse_y = my;
 
-        let mut need_redraw = moved;
+        let mut need_redraw = false;
 
         // 1. Handle Active Window Dragging
         if let Some(drag_idx) = self.drag_win_idx {
@@ -724,13 +726,15 @@ impl Compositor {
                     let win = &mut self.windows[drag_idx];
                     let new_x = (mx as isize - self.drag_offset_x as isize)
                         .max(5)
-                        .min((self.screen_w.saturating_sub(win.width + 5)) as isize);
+                        .min((self.screen_w.saturating_sub(win.width + 5)) as isize) as usize;
                     let new_y = (my as isize - self.drag_offset_y as isize)
                         .max(28)
-                        .min((self.screen_h.saturating_sub(win.height + 25)) as isize);
-                    win.x = new_x as usize;
-                    win.y = new_y as usize;
-                    need_redraw = true;
+                        .min((self.screen_h.saturating_sub(win.height + 25)) as isize) as usize;
+                    if win.x != new_x || win.y != new_y {
+                        win.x = new_x;
+                        win.y = new_y;
+                        need_redraw = true;
+                    }
                 }
             } else {
                 self.drag_win_idx = None;
@@ -744,9 +748,11 @@ impl Compositor {
                     let win = &mut self.windows[res_idx];
                     let new_w = (mx as isize - win.x as isize).clamp(240, (self.screen_w - win.x - 10) as isize) as usize;
                     let new_h = (my as isize - win.y as isize).clamp(140, (self.screen_h - win.y - 25) as isize) as usize;
-                    win.width = new_w;
-                    win.height = new_h;
-                    need_redraw = true;
+                    if win.width != new_w || win.height != new_h {
+                        win.width = new_w;
+                        win.height = new_h;
+                        need_redraw = true;
+                    }
                 }
             } else {
                 self.resize_win_idx = None;
@@ -1107,6 +1113,9 @@ pub fn run() {
         // 2. Process Mouse Events (Dragging, Resizing, Clicking, Menu, Drawing)
         if comp.handle_mouse_events() {
             comp.render();
+        } else {
+            // Smooth cursor update: only redraws the tiny 12x18 cursor sprite without touching the screen
+            vga::update_mouse_cursor(comp.mouse_x, comp.mouse_y);
         }
 
         // 3. Process Keyboard Events

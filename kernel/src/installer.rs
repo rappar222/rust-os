@@ -146,10 +146,10 @@ pub fn run_installer(auto_yes: bool) {
     // 5. Hostname
     let hostname = prompt_string("\n5. Enter Hostname", "rustos", false, auto_yes);
 
-    // 6. User accounts
-    let root_pass = prompt_string("\n6. Set Root Password", "root", true, auto_yes);
+    // 6. User accounts (with Password Confirmation)
+    let root_pass = prompt_password("\n6. Set Root Password", "root", auto_yes);
     let username = prompt_string("   Enter New Username", "archuser", false, auto_yes);
-    let user_pass = prompt_string("   Set Password for user", "archuser", true, auto_yes);
+    let user_pass = prompt_password(&format!("   Set Password for user '{}'", username), "archuser", auto_yes);
     let sudo_opt = prompt_yes_no("   Add user to sudoers (wheel group)?", true, auto_yes);
 
     // 7. Desktop Environment / Window Compositor
@@ -390,6 +390,64 @@ fn prompt_selection_read_input(options: &[&str], default_idx: usize, auto_yes: b
         }
     }
     default_idx
+}
+
+fn prompt_password(prompt_text: &str, default_val: &str, auto_yes: bool) -> String {
+    if auto_yes {
+        return String::from(default_val);
+    }
+
+    loop {
+        let p1 = read_masked_input(prompt_text, default_val);
+        let pass1 = if p1.trim().is_empty() {
+            String::from(default_val)
+        } else {
+            String::from(p1.trim())
+        };
+
+        let p2 = read_masked_input("   Confirm Password", default_val);
+        let pass2 = if p2.trim().is_empty() {
+            String::from(default_val)
+        } else {
+            String::from(p2.trim())
+        };
+
+        if pass1 == pass2 {
+            return pass1;
+        } else {
+            vga::set_colors(ColorCode::LightRed, ColorCode::Black);
+            println!("   [!] Passwords do not match. Please try again.");
+            vga::set_colors(ColorCode::White, ColorCode::Black);
+        }
+    }
+}
+
+fn read_masked_input(prompt_text: &str, default_val: &str) -> String {
+    vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
+    if !default_val.is_empty() {
+        print!("{} [default: ******]: ", prompt_text);
+    } else {
+        print!("{}: ", prompt_text);
+    }
+    vga::set_colors(ColorCode::White, ColorCode::Black);
+
+    let mut input = String::new();
+    loop {
+        let ch = keyboard::read_char();
+        if ch == '\n' || ch == '\r' {
+            println!();
+            break;
+        } else if ch == '\x08' {
+            if !input.is_empty() {
+                input.pop();
+                vga::backspace();
+            }
+        } else if ch >= ' ' && ch <= '~' {
+            input.push(ch);
+            print!("*");
+        }
+    }
+    input
 }
 
 fn prompt_string(prompt_text: &str, default_val: &str, is_password: bool, auto_yes: bool) -> String {
