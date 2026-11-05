@@ -22,7 +22,10 @@ pub mod power;
 pub mod shell;
 pub mod installer;
 pub mod compositor;
+pub mod mouse;
 pub mod arch_commands;
+pub mod tzdata;
+pub mod mirrors;
 
 use alloc::format;
 use bootloader_api::{entry_point, BootInfo, BootloaderConfig};
@@ -54,9 +57,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // 3. Initialize GDT & TSS (with separate double-fault stack)
     gdt::init();
 
-    // 4. Initialize IDT, 8259 PIC, PIT Timer (100 Hz), and PS/2 Keyboard
+    // 4. Initialize IDT, 8259 PIC, PIT Timer (100 Hz), PS/2 Keyboard, and PS/2 Mouse
     interrupts::init();
     keyboard::init();
+    mouse::init(1280, 720);
 
     // 5. Initialize Memory & Dynamic Heap
     let phys_offset = boot_info

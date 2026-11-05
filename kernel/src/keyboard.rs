@@ -61,12 +61,16 @@ pub fn pop_key() -> Option<char> {
 pub fn poll_ps2() {
     let mut status_port: Port<u8> = Port::new(0x64);
     let status = unsafe { status_port.read() };
-    // Bit 0 = Output Buffer Full (data available in 0x60)
-    // Bit 5 = Mouse data (0 = keyboard data, 1 = mouse data)
-    if (status & 0x01) != 0 && (status & 0x20) == 0 {
+    if (status & 0x01) != 0 {
         let mut data_port: Port<u8> = Port::new(0x60);
-        let scancode = unsafe { data_port.read() };
-        handle_scancode(scancode);
+        let byte = unsafe { data_port.read() };
+        if (status & 0x20) != 0 {
+            // Bit 5 = 1: Auxiliary device (Mouse data)
+            crate::mouse::handle_mouse_byte(byte);
+        } else {
+            // Bit 5 = 0: Primary device (Keyboard scancode)
+            handle_scancode(byte);
+        }
     }
 }
 

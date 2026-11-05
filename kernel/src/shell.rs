@@ -749,7 +749,7 @@ fn execute_command(state: &mut ShellState, cmd_line: &str) {
         }
         "hostnamectl" => cmd_hostnamectl(state, &args),
         "date" => cmd_date(),
-        "timedatectl" => cmd_timedatectl(),
+        "timedatectl" => cmd_timedatectl(&args),
         "uptime" => cmd_uptime(),
         "lscpu" => cmd_lscpu(),
         "lspci" => cmd_lspci(),
@@ -1402,54 +1402,103 @@ fn cmd_hostnamectl(state: &mut ShellState, args: &[&str]) {
     println!("    Architecture: x86-64");
 }
 
+fn get_active_timezone() -> (&'static str, i32) {
+    if let Ok(data) = crate::fs::read_file("/etc/timezone") {
+        if let Ok(tz_str) = core::str::from_utf8(&data) {
+            let clean = tz_str.trim();
+            if let Some(tz) = crate::tzdata::find_timezone(clean) {
+                return (tz.name, tz.offset_minutes);
+            }
+        }
+    }
+    ("UTC", 0)
+}
+
 fn cmd_date() {
-    let dt = crate::rtc::read_rtc();
+    let utc_dt = crate::rtc::read_rtc();
+    let (tz_name, offset) = get_active_timezone();
+    let dt = crate::tzdata::convert_utc_to_local(&utc_dt, offset);
+    let tz_code = if tz_name == "UTC" {
+        "UTC"
+    } else {
+        tz_name.split('/').last().unwrap_or("LOC")
+    };
     println!(
-        "{} {} {:2} {:02}:{:02}:{:02} UTC {:04}",
+        "{} {} {:2} {:02}:{:02}:{:02} {} {:04}",
         dt.weekday_name(),
         dt.month_name(),
         dt.day,
         dt.hour,
         dt.minute,
         dt.second,
+        tz_code,
         dt.year
     );
 }
 
-fn cmd_timedatectl() {
-    let dt = crate::rtc::read_rtc();
+fn cmd_timedatectl(args: &[&str]) {
+    if args.len() > 1 && args[1] == "list-timezones" {
+        println!("Available system timezones (IANA tzdata):");
+        for reg in crate::tzdata::REGIONS {
+            println!("  [{}]", reg.name);
+            for tz in reg.timezones {
+                println!("    {} ({})", tz.name, tz.description);
+            }
+        }
+        return;
+    }
+    if args.len() > 2 && args[1] == "set-timezone" {
+        let new_tz = args[2];
+        if let Some(tz) = crate::tzdata::find_timezone(new_tz) {
+            let _ = crate::fs::write_file("/etc/timezone", format!("{}\n", tz.name).as_bytes());
+            let _ = crate::fs::write_file("/etc/localtime", format!("{}\n", tz.name).as_bytes());
+            println!("Time zone set to: {} ({})", tz.name, tz.description);
+        } else {
+            println!("timedatectl: timezone '{}' not recognized. Use 'timedatectl list-timezones' to view list.", new_tz);
+        }
+        return;
+    }
+
+    let utc_dt = crate::rtc::read_rtc();
+    let (tz_name, offset) = get_active_timezone();
+    let local_dt = crate::tzdata::convert_utc_to_local(&utc_dt, offset);
+    let tz_str = crate::tzdata::format_offset_string(offset);
+
     println!(
-        "               Local time: {} {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
-        dt.weekday_name(),
-        dt.year,
-        dt.month,
-        dt.day,
-        dt.hour,
-        dt.minute,
-        dt.second
+        "               Local time: {} {:04}-{:02}-{:02} {:02}:{:02}:{:02} {}",
+        local_dt.weekday_name(),
+        local_dt.year,
+        local_dt.month,
+        local_dt.day,
+        local_dt.hour,
+        local_dt.minute,
+        local_dt.second,
+        tz_str
     );
     println!(
         "           Universal time: {} {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
-        dt.weekday_name(),
-        dt.year,
-        dt.month,
-        dt.day,
-        dt.hour,
-        dt.minute,
-        dt.second
+        utc_dt.weekday_name(),
+        utc_dt.year,
+        utc_dt.month,
+        utc_dt.day,
+        utc_dt.hour,
+        utc_dt.minute,
+        utc_dt.second
     );
     println!(
         "                 RTC time: {} {:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        dt.weekday_name(),
-        dt.year,
-        dt.month,
-        dt.day,
-        dt.hour,
-        dt.minute,
-        dt.second
+        utc_dt.weekday_name(),
+        utc_dt.year,
+        utc_dt.month,
+        utc_dt.day,
+        utc_dt.hour,
+        utc_dt.minute,
+        utc_dt.second
     );
-    println!("                Time zone: UTC (UTC, +0000)");
+    println!("                Time zone: {} ({})", tz_name, tz_str);
     println!("System clock synchronized: yes (CMOS RTC 0x70)");
+    println!("              NTP service: active (network time emulation)");
+    println!("          RTC in local TZ: no");
 }
 
 fn cmd_lscpu() {

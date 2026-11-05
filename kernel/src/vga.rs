@@ -373,6 +373,30 @@ pub fn draw_rect_outline(x: usize, y: usize, width: usize, height: usize, border
     }
 }
 
+pub fn draw_mouse_cursor(x: usize, y: usize) {
+    if let Some(ref mut writer) = *WRITER.lock() {
+        let max_w = writer.info.width;
+        let max_h = writer.info.height;
+        for (cy, row) in crate::mouse::CURSOR_SPRITE.iter().enumerate() {
+            let py = y + cy;
+            if py >= max_h {
+                break;
+            }
+            for (cx, &val) in row.iter().enumerate() {
+                let px = x + cx;
+                if px >= max_w {
+                    break;
+                }
+                if val == 1 {
+                    writer.draw_pixel(px, py, RgbColor { r: 0, g: 0, b: 0 });
+                } else if val == 2 {
+                    writer.draw_pixel(px, py, RgbColor { r: 255, g: 255, b: 255 });
+                }
+            }
+        }
+    }
+}
+
 pub fn draw_string(px: usize, py: usize, text: &str, fg: RgbColor, bg: Option<RgbColor>) {
     if let Some(ref mut writer) = *WRITER.lock() {
         let mut curr_x = px;

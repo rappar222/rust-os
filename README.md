@@ -43,28 +43,33 @@
 - **Guided Setup (`rustos-install` / `install`)**:
   - Interactive multi-step wizard for configuring storage, localization, networking, and desktop environment.
   - **Locale & Keymap**: Choose between English (US/UK), German, Romanian, French, Spanish, Italian.
-  - **Timezone**: Select between UTC, Europe/Bucharest, America/New_York, Europe/London, Europe/Berlin, Asia/Tokyo.
-  - **Package Mirror**: Select Tier-1 Arch & RustOS package mirrors (Worldwide geo, Kernel.org, Cloudflare CDN).
+  - **Worldwide Timezones (`tzdata`)**: Full IANA timezone database categorized by World Region / Continent (Europe, Americas, Asia, Africa, Australia & Pacific, Atlantic & Antarctica, Universal POSIX/UTC) or custom timezone entry, with live offset conversion.
+  - **Location-Based Package Mirrors**: Select package mirrors by Country (Worldwide CDN, Romania, United States, Germany, United Kingdom, France, Canada, Australia, Japan, Netherlands, Switzerland, Sweden, Brazil, India, Singapore, South Korea, Poland, Italy, Spain, China), then choose your preferred mirror from that country.
   - **Disk Partitioning**: Wipe and auto-partition `/dev/sda` with SimpleFS v2 persistence, use existing partitions, or RAM disk.
   - **System Hostname & Users**: Set hostname, root password, standard user account, and sudoers (`wheel` group) privileges.
   - **Desktop Selection**: Choose to install the RustOS Floating Window Compositor or minimal CLI console.
   - Automated non-interactive mode supported via `-y` / `--yes`.
 
 ### 5. Custom Floating Window Compositor (`startx` / `wm` / `desktop`)
-- **Overlapping Floating Windows**:
-  - Available after installation (or enabled via `startx` / `wm` / `desktop`).
-  - **Interactive Floating Terminal**: Live `rsh` shell in a floating window supporting commands, scrolling, and history.
-  - **Live System Monitor**: Floating `btop` dashboard with live CPU stats, memory, disk I/O, and kernel tasks.
-  - **System Information Window**: Floating `neofetch` window with the official Rust gear ASCII logo and specifications.
-- **Window Chrome & Controls**:
-  - Rust Orange (`#DE551C`) title bars for focused windows with `[X]` `[-]` `[+]` control buttons and 1px border.
-  - Top taskbar panel showing RustOS badge, active window tabs, live RTC UTC clock, and memory stats.
-  - Bottom status bar with keybinding hints.
+- **Real Hardware PS/2 Mouse & Window Management**:
+  - Hardware PS/2 mouse driver (`kernel/src/mouse.rs`) decoding 3-byte packets, tracking coordinates, and rendering an arrow cursor sprite directly onto the framebuffer.
+  - **Mouse Controls**:
+    - **Click and Drag Titlebar**: Move windows anywhere on the screen.
+    - **Bottom-Right Drag Handle**: Resize windows interactively.
+    - **Click-to-Focus**: Bring clicked windows to the top of the Z-stack.
+    - **Window Buttons**: Click `[X]` to close, `[-]` to minimize, `[+]` to maximize/restore.
+    - **Top Taskbar**: Clickable `[RustOS]` Start Menu launcher, interactive window tabs to restore/raise windows, live RAM monitor, and RTC clock.
+  - **Interactive Graphical Apps**:
+    - **Terminal Emulator**: Live interactive `rsh` shell in a floating window.
+    - **System Resource Monitor (`btop`)**: Live CPU and heap memory visual bars, storage status, and active kernel tasks.
+    - **File Browser**: Interactive SimpleFS browser with directory navigation and file viewing.
+    - **Paint / Drawing Canvas**: Interactive drawing board with mouse brush and color palette picker.
+    - **System Info (`neofetch`)**: Rust gear ASCII logo and hardware specs.
 - **Keyboard Shortcuts**:
-  - `Alt + Tab`: Cycle focus through windows and bring focused window to the top of the Z-stack.
-  - `Alt + Arrows`: Move focused window smoothly across the screen canvas.
+  - `Alt + Tab`: Cycle focus through windows.
+  - `Alt + Arrows`: Move focused window.
   - `Alt + N`: Spawn a new floating terminal window.
-  - `Alt + Q`: Close the active window.
+  - `Alt + Q`: Close active window.
   - `Esc`: Exit GUI compositor and return cleanly to the console shell.
 
 ### 6. Linux Utility Suite

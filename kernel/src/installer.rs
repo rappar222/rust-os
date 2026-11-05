@@ -32,41 +32,93 @@ pub fn run_installer(auto_yes: bool) {
     );
     let chosen_locale = locales[locale_idx].split_whitespace().next().unwrap_or("en_US.UTF-8");
 
-    // 2. Timezone
-    let timezones = [
-        "UTC (Coordinated Universal Time)",
-        "Europe/Bucharest",
-        "America/New_York",
-        "Europe/London",
-        "Europe/Berlin",
-        "Asia/Tokyo",
+    // 2. Timezone (Comprehensive World Timezones by Region)
+    let region_names: [&str; 8] = [
+        "Europe (36 timezones)",
+        "Americas (North, Central & South - 29 timezones)",
+        "Asia (31 timezones)",
+        "Africa (19 timezones)",
+        "Australia & Pacific (16 timezones)",
+        "Atlantic & Antarctica (11 timezones)",
+        "Universal & POSIX (UTC / GMT - 26 timezones)",
+        "Custom / Enter Timezone Manually",
     ];
-    let tz_idx = prompt_selection(
-        "\n2. Select Timezone:",
-        &timezones,
-        0,
-        auto_yes,
-    );
-    let chosen_tz = timezones[tz_idx].split_whitespace().next().unwrap_or("UTC");
 
-    // 3. Package Mirror Server
-    let mirrors = [
-        "Worldwide Tier-1 (geo.mirror.pkgbuild.com)",
-        "Kernel.org Tier-1 (mirrors.kernel.org)",
-        "Cloudflare Global CDN (cloudflare.cdn.pkgbuild.com)",
-        "Local High-Speed Cache Mirror",
-    ];
-    let mirror_idx = prompt_selection(
-        "\n3. Select Package Repository Mirror:",
-        &mirrors,
-        0,
-        auto_yes,
-    );
-    let chosen_mirror = match mirror_idx {
-        0 => "https://geo.mirror.pkgbuild.com/$repo/os/$arch",
-        1 => "https://mirrors.kernel.org/archlinux/$repo/os/$arch",
-        2 => "https://cloudflare.cdn.pkgbuild.com/$repo/os/$arch",
-        _ => "https://local.rustos.mirror/$repo/os/$arch",
+    let chosen_tz: String = if auto_yes {
+        String::from("UTC")
+    } else {
+        let region_idx = prompt_selection(
+            "\n2a. Select Timezone Continent / World Region:",
+            &region_names,
+            0,
+            auto_yes,
+        );
+
+        if region_idx == 7 {
+            prompt_string("   Enter Custom Timezone (e.g. Europe/Bucharest, America/New_York, UTC)", "UTC", false, false)
+        } else {
+            let region = &crate::tzdata::REGIONS[region_idx];
+            let mut tz_labels: alloc::vec::Vec<String> = alloc::vec::Vec::new();
+            for tz in region.timezones {
+                tz_labels.push(format!("{} ({})", tz.name, crate::tzdata::format_offset_string(tz.offset_minutes)));
+            }
+            let label_slices: alloc::vec::Vec<&str> = tz_labels.iter().map(|s| s.as_str()).collect();
+
+            let title = format!("\n2b. Select Timezone in {}:", region.name);
+            let selected_tz_idx = prompt_selection_columns(&title, &label_slices, 0, auto_yes);
+            String::from(region.timezones[selected_tz_idx].name)
+        }
+    };
+
+    // 3. Package Mirror Server (Location-based: Country -> Mirror)
+    let country_list = crate::mirrors::COUNTRY_MIRRORS;
+    let mut country_labels: alloc::vec::Vec<String> = alloc::vec::Vec::new();
+    for c in country_list {
+        country_labels.push(format!("{} ({} mirrors)", c.country, c.mirrors.len()));
+    }
+    country_labels.push(String::from("Custom Mirror URL (Manual Input)"));
+    let country_slices: alloc::vec::Vec<&str> = country_labels.iter().map(|s| s.as_str()).collect();
+
+    let (chosen_country, chosen_mirror_name, chosen_mirror): (String, String, String) = if auto_yes {
+        (
+            String::from("Worldwide / Global Anycast"),
+            String::from("GeoDNS Tier-1 Global Anycast"),
+            String::from("https://geo.mirror.pkgbuild.com/$repo/os/$arch")
+        )
+    } else {
+        let country_idx = prompt_selection_columns(
+            "\n3a. Select Package Mirror Location / Country:",
+            &country_slices,
+            0,
+            auto_yes,
+        );
+
+        if country_idx >= country_list.len() {
+            let custom_url = prompt_string(
+                "   Enter Custom Mirror Server URL",
+                "https://geo.mirror.pkgbuild.com/$repo/os/$arch",
+                false,
+                false,
+            );
+            (String::from("Custom"), String::from("Custom Mirror Server"), custom_url)
+        } else {
+            let country = &country_list[country_idx];
+            let mut mirror_labels: alloc::vec::Vec<String> = alloc::vec::Vec::new();
+            for m in country.mirrors {
+                mirror_labels.push(format!("{} [{}] ({})", m.name, m.bandwidth, m.location));
+            }
+            let mirror_slices: alloc::vec::Vec<&str> = mirror_labels.iter().map(|s| s.as_str()).collect();
+
+            let title = format!("\n3b. Select Mirror Server in {}:", country.country);
+            let mirror_idx = prompt_selection(&title, &mirror_slices, 0, auto_yes);
+            let selected_mirror = &country.mirrors[mirror_idx];
+
+            (
+                String::from(country.country),
+                String::from(selected_mirror.name),
+                String::from(selected_mirror.url)
+            )
+        }
     };
 
     // 4. Partitioning & Disk Layout
@@ -121,7 +173,8 @@ pub fn run_installer(auto_yes: bool) {
     vga::set_colors(ColorCode::White, ColorCode::Black);
     println!("   * Locale & Keymap : {}", chosen_locale);
     println!("   * Timezone        : {}", chosen_tz);
-    println!("   * Mirror Server   : {}", mirrors[mirror_idx]);
+    println!("   * Mirror Location : {}", chosen_country);
+    println!("   * Mirror Server   : {} ({})", chosen_mirror_name, chosen_mirror);
     println!("   * Storage Layout  : {}", partition_schemes[part_idx]);
     println!("   * Hostname        : {}", hostname);
     println!("   * Root Account    : root ({})", if root_pass == "root" { "default" } else { "configured" });
@@ -166,10 +219,14 @@ pub fn run_installer(auto_yes: bool) {
     let _ = fs::write_file("/etc/hostname", format!("{}\n", hostname).as_bytes());
     let _ = fs::write_file("/etc/locale.conf", format!("LANG={}\nLC_COLLATE=C\n", chosen_locale).as_bytes());
     let _ = fs::write_file("/etc/timezone", format!("{}\n", chosen_tz).as_bytes());
-    let _ = fs::write_file(
-        "/etc/pacman.d/mirrorlist",
-        format!("# RustOS Arch Mirrorlist\nServer = {}\n", chosen_mirror).as_bytes(),
+    let _ = fs::write_file("/etc/localtime", format!("{}\n", chosen_tz).as_bytes());
+    let mirror_content = format!(
+        "# RustOS Pacman Mirrorlist (Inspired by Arch Linux)\n# Primary Country: {}\n# Server Name: {}\nServer = {}\n\n# Fallback Anycast Mirrors:\nServer = https://geo.mirror.pkgbuild.com/$repo/os/$arch\nServer = https://cloudflare.cdn.pkgbuild.com/$repo/os/$arch\n",
+        chosen_country,
+        chosen_mirror_name,
+        chosen_mirror
     );
+    let _ = fs::write_file("/etc/pacman.d/mirrorlist", mirror_content.as_bytes());
     let _ = fs::write_file(
         "/etc/os-release",
         b"NAME=\"RustOS\"\nPRETTY_NAME=\"RustOS (Inspired by Arch Linux, x86_64 in Rust)\"\nID=rustos\nID_LIKE=arch\nBUILD_ID=rolling\nANSI_COLOR=\"38;2;222;85;28\"\nHOME_URL=\"https://github.com/rappar222/rust-os\"\n",
@@ -226,10 +283,69 @@ pub fn run_installer(auto_yes: bool) {
     println!(" Type 'help' to view all commands or 'neofetch' / 'pacman -Q' to inspect.");
 }
 
+fn prompt_selection_columns(title: &str, options: &[&str], default_idx: usize, auto_yes: bool) -> usize {
+    vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
+    println!("{}", title);
+    vga::set_colors(ColorCode::White, ColorCode::Black);
+
+    if options.len() <= 6 {
+        return prompt_selection_internal(options, default_idx, auto_yes);
+    }
+
+    let half = (options.len() + 1) / 2;
+    for row in 0..half {
+        let left_idx = row;
+        let right_idx = row + half;
+
+        // Left item
+        if left_idx == default_idx {
+            vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
+            print!(" *{:2}) ", left_idx + 1);
+        } else {
+            vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
+            print!("  {:2}) ", left_idx + 1);
+        }
+        vga::set_colors(if left_idx == default_idx { ColorCode::RustOrange } else { ColorCode::White }, ColorCode::Black);
+        let left_text = options[left_idx];
+        let mut left_chars = 0;
+        for c in left_text.chars().take(34) {
+            print!("{}", c);
+            left_chars += 1;
+        }
+        for _ in left_chars..35 {
+            print!(" ");
+        }
+
+        // Right item
+        if right_idx < options.len() {
+            if right_idx == default_idx {
+                vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
+                print!(" *{:2}) ", right_idx + 1);
+            } else {
+                vga::set_colors(ColorCode::LightCyan, ColorCode::Black);
+                print!("  {:2}) ", right_idx + 1);
+            }
+            vga::set_colors(if right_idx == default_idx { ColorCode::RustOrange } else { ColorCode::White }, ColorCode::Black);
+            let right_text = options[right_idx];
+            for c in right_text.chars().take(36) {
+                print!("{}", c);
+            }
+        }
+        println!();
+    }
+    vga::set_colors(ColorCode::White, ColorCode::Black);
+
+    prompt_selection_read_input(options, default_idx, auto_yes)
+}
+
 fn prompt_selection(title: &str, options: &[&str], default_idx: usize, auto_yes: bool) -> usize {
     vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
     println!("{}", title);
     vga::set_colors(ColorCode::White, ColorCode::Black);
+    prompt_selection_internal(options, default_idx, auto_yes)
+}
+
+fn prompt_selection_internal(options: &[&str], default_idx: usize, auto_yes: bool) -> usize {
     for (i, opt) in options.iter().enumerate() {
         if i == default_idx {
             vga::set_colors(ColorCode::RustOrange, ColorCode::Black);
@@ -239,6 +355,10 @@ fn prompt_selection(title: &str, options: &[&str], default_idx: usize, auto_yes:
             println!("   {}) {}", i + 1, opt);
         }
     }
+    prompt_selection_read_input(options, default_idx, auto_yes)
+}
+
+fn prompt_selection_read_input(options: &[&str], default_idx: usize, auto_yes: bool) -> usize {
     if auto_yes {
         println!("   -> Selected: {} (auto)", options[default_idx]);
         return default_idx;
